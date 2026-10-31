@@ -23,3 +23,10 @@ Lessons learned while setting up this Phaser 4 + TypeScript project on Windows P
   // ...
   '@ | Set-Content -Path src\main.ts -Encoding UTF8
   ```
+
+## Git / GitHub (repo already initialized & pushed)
+- **Repo:** `https://github.com/loreaccurateclown/StrategyGamev1` on branch `main`. 218 files committed. No further setup needed for normal commits/pushes.
+- **Auth works out of the box** — `gh auth status` shows logged-in `loreaccurateclown` with `repo` scope, and gh's git credential helper is installed (`credential.https://github.com.helper`). Plain `git commit` + `git push origin main` (no `-c` flags) succeeds.
+- **Do NOT** set `http.https://github.com/.extraheader="AUTHORIZATION: token ..."` — that sends the REST-API header scheme, which git smart HTTP rejects ("invalid credentials"). The helper handles Basic auth automatically. If you ever see "duplicate Authorization", clear it with `git config --global --unset-all http.https://github.com/.extraheader`.
+- **First push required repo creation:** when pushing to a brand-new remote that doesn't exist yet, git returns "Repository not found" (404) even though auth is fine — you must run `gh repo create StrategyGamev1 --public` first. This already happened; the repo exists now.
+- **Windows gotcha:** the system gitconfig (`C:\Program Files\Git\etc\gitconfig`) had `[credential] helper = manager`, which caused duplicate-header/auth failures. It was removed so gh's helper is used instead. Don't re-add `manager`.
