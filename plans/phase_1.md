@@ -1,8 +1,10 @@
 # Phase 1: Core Loop Vertical Slice (Days 1–2)
 
+> **Superseded on board size (2026-11-01).** The board is now **64×48 tiles** displayed at a fixed **48 px per tile** (integer 3× on the 16 px source art) on a window-filling, pannable canvas. The pathfinding contracts, types, and tests in this file are **unaffected** — they are grid-agnostic and still authoritative. Wherever this file says 32×32 / 512×512, read it as the original Phase 1 scope; the current target lives in [`plan.md`](./plan.md) and [`phase_4.md`](./phase_4.md).
+
 > **Verified 2026-10-31 against Phaser 4.2.1:** `Scene.load.tilemapTiledJSON`, `Tilemap.getTileAt`, and `TilemapLayer.setCollision` are present in the pinned package's TypeScript declarations.
 
-**Goal:** A single runnable `BattleScene` where you can **click a unit → see reachable tiles → click a tile → it moves**, on a **32×32 tile board of 16×16 px tiles** (512×512 px world) with terrain costs. No fog, no attack, no AI, no scene-per-phase. Only `BattleScene` is implemented (started directly via `main.ts`).
+**Goal:** A single runnable `BattleScene` where you can **click a unit → see reachable tiles → click a tile → it moves**, on a **64×48 tile board built from 16×16 px source tiles** (1024×768 px world, shown at 48 px/tile) with terrain costs. No fog, no attack, no AI, no scene-per-phase. Only `BattleScene` is implemented (started directly via `main.ts`).
 
 > **Note (2026-10-31):** the tile size is **16×16 px**, not 32×32 px. It is dictated by the only tileset in the repo. The *board* is still 32×32 tiles. The hardcoded map in step 1.3 has been superseded by the generated map from `phase_4.md`, so step 1.3 is now "load the generated map" rather than "invent a grid".
 
@@ -211,7 +213,7 @@ describe("reconstructPath", () => {
 ---
 
 ## Definition of Done
-- `npm run dev` shows a **32×32 tile board at 16 px = 512×512 px** with 4 terrain types (grass / forest / water / mountain)
+- `npm run dev` shows a **64×48 tile board at 48 px/tile (1024×768 px world, 3072×2304 px on screen)** with 4 terrain types (grass / forest / water / mountain), on a window-filling canvas the camera can pan
 - One unit marker on grass. Click → reachable tiles highlighted (water unreachable, forest costs 2, mountain costs 3)
 - Click a reachable tile → unit animates along path over ~200 ms
 - `npm test` passes all Pathfinding tests
@@ -234,7 +236,7 @@ describe("reconstructPath", () => {
 - **1.0 is a hard gate** — passed for Phaser 4.2.1 on 2026-10-31; do not change the pinned version or rely on unverified APIs without repeating the gate.
 - **1.2 must precede 1.3 through 1.5 (including all sub-steps)** — types are defined first so the Dijkstra code and rendering compile against stable contracts rather than being rewritten mid-phase.
 - **1.4 (Dijkstra) feeds 1.5 (core loop)** — pathfinding is implemented before it's wired into input handling, with `Pathfinding.test.ts` driving the implementation in parallel via step 1.4c.
-- **Tile size is 16 px, board is 32×32 tiles.** Do not reintroduce 32 px arithmetic; `TILE_SIZE` comes from `map.tileWidth`, and world size from `map.widthInPixels`.
+- **Source tiles are 16 px; the board is 64×48 tiles** (1024×768 world px), displayed at 48 px/tile. Do not reintroduce 32 px *source* arithmetic — `TILE_SIZE` comes from `map.tileWidth` (16), display scale comes from the camera zoom (3), and world size from `map.widthInPixels`. Never hardcode the display tile size into pathfinding or input math.
 
 ---
 

@@ -217,18 +217,20 @@ Read out of the package source, not inferred from experiments:
 - **Dense, contiguous forest/mountain** adds tactical movement cost and *never* disconnects the map. Adjacency is desirable — it reads as a grove or a massif.
 - **Water is the only terrain that can strand a region.** It is the one thing density tuning can break, which is why G1 and G2 are coupled and must land together.
 
-### G1 — Retune density (target ≈ 37 %)
+### G1 — Retune density for the larger board
+
+The board grows from 32×32 (1024 cells) to **64×48 (3072 cells)** as part of the 48 px/tile display decision — see [`plan.md`](./plan.md) decisions table. Verified safe: `npm run map:generate -- --width 64 --height 48` holds the requested size exactly with **no silent growth**, so the size change alone is not the risk. At the current element counts occupancy collapses to **7.1 %** (219/3072), which is why the counts have to scale roughly 5×, not just the reserved space.
 
 Starting point, to be iterated by measurement rather than treated as a spec:
 
 | Element | Art | `f` | Qty | Cells | Reserved |
 |---------|-----|-----|-----|-------|----------|
-| forest | 6×5, ~26 filled | 0 | 7 | 182 | 210 |
-| mountain | 6×4, ~20 filled | 0 | 4 | 80 | 96 |
-| water | 7×6, ~38 filled | 1 | 3 | 114 | 216 |
-| | | | | **376 (37 %)** | **522 (58 %)** |
+| forest | 6×5, ~26 filled | 0 | 20 | 520 | 600 |
+| mountain | 6×4, ~20 filled | 0 | 14 | 280 | 336 |
+| water | 7×6, ~38 filled | 1 | 8 | 304 | 576 |
+| | | | | **1104 (36 %)** | **1512 (49 %)** |
 
-The reservation total deliberately stays near the already-proven 58–60 %: above that the growth fallback returns. Denser clumps also improve the art (`f = 0` lets a grove be a grove instead of a scatter of separated clumps).
+The reservation total stays near half the board rather than the 58–60 % that was already proven on 1024 cells: a 3072-cell board has more room to breathe, and staying well under the limit keeps `placeRejectResolver` from having to rearrange or grow. Denser clumps also improve the art (`f = 0` lets a grove be a grove instead of a scatter of separated clumps).
 
 ### G2 — Make `verifyMap` prove the map is playable
 
@@ -282,12 +284,22 @@ G1 + G2  →  G3 + G4 (+G5)  →  freeze contract  →  4.2b TileMapManager  →
 
 - `npm run map:generate` prints occupancy per terrain and total inside the asserted band, plus a connectivity result (1 component).
 - Same seed still produces a byte-identical `level_01.json` **and** `level_01.terrain.json`; a different seed produces different ones.
-- Board is still exactly `32x32 @ 16px`, so the silent-growth guard still passes.
+- Board is still exactly `64x48 @ 16px` (1024×768 px world), so the silent-growth guard still passes.
 - `level_01.terrain.json` re-derived from the visual layers matches the emitted file exactly.
 - `npx tsc --noEmit` clean, and the map still renders in `npm run dev`.
 
 ### Open questions for 4.1b
 
-- **Coverage target** — ≈37 % (proposed) vs a more open ≈25 %. Only water affects connectivity, so this mostly controls how much cost terrain exists.
-- **Board size** — the generator takes `--width` / `--height`, but the **renderer caps the board at 37×37**. `BattleScene.fitCameraToMap` uses `max(1, floor(fitRatio))`, so zoom never drops below 1:1 and the whole board must fit the 800×600 canvas at 1:1: 37×37 = 592 px fits, 38×38 = 608 px is already cropped, and 48×48 = 768 px overflows the 600 px height badly. So 48×48 is *not* a free CLI flag — it needs a canvas-size, `Phaser.Scale`, or camera-panning decision first. Separately, the board renders at **1:1 today** (fitRatio 1.172 → floor → 1), i.e. 512×512 inside an 800×600 canvas with ~144 px side and ~44 px top/bottom margins; if it looks too small, the fix is the canvas/scale setup, not the tile size.
+- **Coverage target** — ≈36 % (proposed) vs a more open ≈25 %. Only water affects connectivity, so this mostly controls how much cost terrain exists.
+
+### Display and board size — decided 2026-11-01
+
+The earlier "the renderer caps the board at 37×37" problem is resolved by changing the display strategy rather than the board:
+
+- **Fixed 48 px per tile** (integer camera zoom 3 on the 16 px source art — the source is never rescaled), so tiles look right at any OS scaling.
+- **Canvas fills the window** (`Phaser.Scale.RESIZE`), replacing the hardcoded 800×600 in `main.ts`.
+- **Camera pans** within `camera.setBounds(0, 0, map.widthInPixels, map.heightInPixels)`; the whole board no longer has to fit on screen, so `fitCameraToMap`'s `max(1, floor(fitRatio))` is replaced by a fixed zoom of 3.
+- **Board is 64×48 tiles** = 1024×768 world px → 3072×2304 screen px at 3×. At 48 px/tile the 1440p viewport shows ~53×30 tiles at 100 % scaling, ~42×24 at 125 %, ~35×20 at 150 % — so the board is always larger than the viewport and never letterboxes.
+
+Consequences for this phase: element counts scale with the board (see G1), the connectivity check in G2 matters more (larger board, more water), and G4's layer merging matters more (each `TilemapLayer` is now 64×48 instead of 32×32).
 

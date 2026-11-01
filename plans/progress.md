@@ -23,6 +23,8 @@ Everything below was re-run this session, not copied from the previous handoff.
 | Fog, attack, enemy AI | absent | ⬜ |
 | `npm test` | fails **before running any test** — `spawn EPERM` | ⚠️ environment |
 
+The board is still **32×32 on disk** — that is the current, verified state. It changes to **64×48** with step G1 (see [`phase_4.md`](./phase_4.md)); the display strategy that makes 64×48 the right size is settled, but no generator or renderer change has been made yet.
+
 ### `npm test` cannot run in this sandbox
 
 ```
@@ -90,7 +92,7 @@ That is an **early snapshot taken right after project setup** — it has no `src
 
 ## Key facts to not relearn
 
-1. **Tile size is 16 px, board is 32×32 tiles → 512×512 px world.** Docs once said 32 px / 1024 px. Board size never changed; tile size did.
+1. **Source tile size is 16 px and never changes; the board moves from 32×32 to 64×48.** What changes is the *display*: a fixed **48 px per tile** (integer 3× camera zoom) on a window-filling, pannable canvas. The world stays 16 px-based (1024×768 px for 64×48) while the screen shows 3072×2304 px. Docs once said "32 px source tiles" — they never were. See fact 12 for the retired fit-to-window approach.
 2. **Gids are 1-based** (`firstgid: 1`). `groundTile: 0` means *no ground layer*, not "gid 0".
 3. **`tilesets[0].name` in the generated JSON is the map name** (`level_01`), not the image filename. `addTilesetImage` needs that name plus a separate texture key.
 4. **Every generator script must be `.cjs`** — `package.json` has `"type": "module"`.
@@ -101,7 +103,7 @@ That is an **early snapshot taken right after project setup** — it has no `src
 9. **Placement cost is `(w + 2·freeSpace) × (h + 2·freeSpace)` per element**, and `requiredForBothSidesDuplicator = 2` is hard-coded in the generator. This — not `elementsQuantity` — is what caps terrain density at ~21 %. Details in [`phase_4.md`](./phase_4.md).
 10. **Only water can partition the board.** Forest and mountain are `passable: true` (cost 2/3), so dense contiguous forest/mountain adds tactical cost without ever disconnecting the map. Water is the only terrain that can strand a region, which is why density tuning and the connectivity check are coupled.
 11. **`.vscode/todos.json` is gitignored** (`.gitignore` has `.vscode/*` with only `extensions.json` excepted). The task tracker is therefore local-only and does not travel with the repo.
-12. **32×32 is a design choice, not a scaling artifact.** The tiles are still 16×16 (`kenney_tinybattle.tsx`: `tilewidth=16`, `spacing=1`, `columns=18`, 198 tiles; PNG is 305×186, and `18·16 + 17·1 = 305`, `11·16 + 10·1 = 186`). The only coupling is `world px = tiles × 16`, so 32×32 → 512×512. But there *is* a hard ceiling from rendering: `fitCameraToMap` uses `max(1, floor(fitRatio))`, so zoom never goes below 1:1 and the board must fit the 800×600 canvas unscaled — **37×37 (592 px) is the largest that fits; 38×38 (608 px) is already cropped, and 48×48 (768 px) overflows the height.** Today the board renders at 1:1 (fitRatio 1.172 → zoom 1).
+12. **The board size is display-driven, not a tileset constraint.** Tiles verified at 16×16 (`kenney_tinybattle.tsx`: `tilewidth=16`, `spacing=1`, `columns=18`, 198 tiles; PNG 305×186). The earlier cap of 37×37 existed only because `fitCameraToMap` clamped zoom to `max(1, floor(fitRatio))` inside a hardcoded 800×600 canvas, so the whole board had to fit at 1:1. That approach is **retired** in favour of fixed 48 px/tile + panning, which is why the board can now be 64×48. Do not resurrect fit-to-window zoom.
 
 ---
 
@@ -130,7 +132,7 @@ npm run map:generate -- --seed 1234
 
 **Generator hardening first** ([`phase_4.md`](./phase_4.md), steps G1–G6), then the client work it unblocks:
 
-1. **G1** retune density (≈37 % target) using larger dense clumps and `freeSpace 0` for forest/mountain, keeping water modest.
+1. **G1** retune density for the new **64×48** board (≈36 % target) using larger dense clumps and `freeSpace 0` for forest/mountain, keeping water modest — counts scale ~5×, since the current set drops to 7.1 % on 3072 cells.
 2. **G2** extend `verifyMap` with a connectivity flood-fill, an occupancy band assertion, and a visual/collision footprint agreement check.
 3. **G3** emit a `level_01.terrain.json` sidecar so the client never reverse-maps gids.
 4. **G4** collapse 27 layers to ~4 via `autoMergeLayersByKeys`.
@@ -144,6 +146,7 @@ npm run map:generate -- --seed 1234
 - **`todo.md` retired.** The actionable list is `.vscode/todos.json` (Todo It). A second hand-maintained markdown list was pure duplication. Do not recreate it — put tasks in the tracker and let `plans/` hold specs.
 - **`getTerrainCost` stays.** `getReachableTiles` keeps its cost-function parameter and a `number[][]` grid, per `phase_1.md`. Tests still derive expected costs from `TERRAIN_DEFS`, so the two formulations agree behaviourally; only the signature differs.
 - **The map contract must be frozen before 4.2b is written.** `TileMapManager` written against today's 27-layer, reverse-mapped-gid output would be thrown away after G3/G4.
+- **Display strategy settled 2026-11-01 — fixed 48 px/tile + panning, board 64×48.** Source art stays 16 px and is never rescaled; the 3× is integer camera zoom. The canvas fills the window (`Phaser.Scale.RESIZE`) instead of a hardcoded 800×600, and the board is deliberately larger than the viewport so it never letterboxes at any OS scaling. Full numbers in [`phase_4.md`](./phase_4.md) under "Display and board size — decided". This supersedes the old fit-the-whole-board-in-800×600 approach and its 37×37 ceiling.
 - **Still open (tracked):** `UnitType` is declared as an object type in `src/types/game.types.ts` but specified as a string-literal union in `phase_1.md`.
 
 ---

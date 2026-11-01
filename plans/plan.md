@@ -1,7 +1,7 @@
 # Plan: Advance Wars-Style 2D Turn-Based Strategy Game in Phaser 4 + TypeScript
 
 ## TL;DR
-Build an Advance Wars-inspired turn-based strategy game using **Phaser 4 (TypeScript)** on a **32×32 tile board with 16×16 px tiles** (a 512×512 px world). Use a **single `BattleScene` with an internal FSM** for phase management, custom **Dijkstra pathfinding** with per-tile movement costs, and a **three-state fog-of-war** model. Maps are produced procedurally by `@reldens/tile-map-generator` from the Kenney tiny-battle tileset — see [`phase_4.md`](./phase_4.md) and [`progress.md`](./progress.md).
+Build an Advance Wars-inspired turn-based strategy game using **Phaser 4 (TypeScript)** on a **64×48 tile board built from 16×16 px source tiles** (a 1024×768 px world), **displayed at a fixed 48 px per tile** (3× the source art) on a window-filling canvas with camera panning. Use a **single `BattleScene` with an internal FSM** for phase management, custom **Dijkstra pathfinding** with per-tile movement costs, and a **three-state fog-of-war** model. Maps are produced procedurally by `@reldens/tile-map-generator` from the Kenney tiny-battle tileset — see [`phase_4.md`](./phase_4.md) and [`progress.md`](./progress.md).
 
 ---
 
@@ -9,7 +9,8 @@ Build an Advance Wars-inspired turn-based strategy game using **Phaser 4 (TypeSc
 
 | Decision | Rationale |
 |----------|-----------|
-| **Tile size: 16×16 px** | Matches the only tileset the project has (`assets/tilemaps/kenney_tinybattle.tsx`: 16 px, 1 px spacing, 18 columns, 198 tiles). A 32×32 board is therefore 512×512 px, not 1024×1024 |
+| **Source tiles: 16×16 px, displayed at 48 px (3×)** | 16 px is the only tileset the project has (`kenney_tinybattle.tsx`: 16 px, 1 px spacing, 18 columns, 198 tiles). It is **never rescaled in the source** — the 3× happens at render time by integer camera zoom, which keeps pixel art crisp. Fixed 48 px/tile (not fit-to-window) is what makes the game look right on a 1440p display regardless of OS scaling |
+| **Board: 64×48 tiles** | At 48 px/tile the 1440p viewport shows ~53×30 tiles (100 % scaling) down to ~35×20 (150 % scaling). A 32×32 board would letterbox badly at every one of those, so the battlefield is deliberately larger than any viewport and the camera pans within it |
 | **Phaser 4 + TypeScript** | Type safety; scene system maps cleanly to top-level game states |
 | **Square grid, 4-directional movement for MVP** | Simplest correct model. Diagonals, "don't cut corners" LOS, and 8-way adjacency are deferred to Phase 5+ |
 | **Dijkstra over BFS for pathfinding** | BFS assumes uniform edge weight; terrain costs break that assumption |
@@ -60,7 +61,7 @@ Each phase has a canonical spec in its own file. This document gives the goal, t
 
 ### [Phase 1: Core Loop Vertical Slice (Days 1–2)](./phase_1.md)
 
-**Goal:** A single runnable `BattleScene` where you can **click a unit → see reachable tiles → click a tile → it moves**, on a 32×32 tile board of 16×16 px tiles, with terrain costs. No sprites beyond the tileset, no fog, no attack, no AI.
+**Goal:** A single runnable `BattleScene` where you can **click a unit → see reachable tiles → click a tile → it moves**, on a 64×48 tile board of 16×16 px source tiles, with terrain costs. No sprites beyond the tileset, no fog, no attack, no AI.
 
 **Status:** the board, the generated map, and its rendering are done. Movement, pathfinding wiring, and the FSM are not. See [`progress.md`](./progress.md).
 
@@ -110,7 +111,7 @@ Originally "Tiled Integration & Tooling". The map is **not** hand-authored in th
 |------|------|---------|--------|
 | 4.1 | Map generation pipeline | `npm run map:generate` → `public/assets/maps/level_01.json` via `@reldens/tile-map-generator@0.64.0`, seeded for reproducibility. Terrain: grass/forest/water/mountain. Tile size 16 px | ✅ done |
 | 4.1b | Generator hardening | Raise density from 21 % by improving placement efficiency (`freeSpace` 0 for forest/mountain, larger clumps, water kept modest), add connectivity + occupancy assertions to `verifyMap`, emit a `level_01.terrain.json` sidecar, and collapse 27 layers to ~4 | ⬜ next |
-| 4.2a | Render the generated map | `BattleScene` loads the JSON + tileset texture with `load.tilemapTiledJSON` / `load.image`, builds one `createLayer` per non-collision layer, fits the camera to 512×512 px | ✅ done |
+| 4.2a | Render the generated map | `BattleScene` loads the JSON + tileset texture with `load.tilemapTiledJSON` / `load.image`, builds one `createLayer` per non-collision layer, fits the camera to the board | ✅ done, **needs revision** for the 48 px/tile + panning decision (fixed zoom 3 on a window-filling canvas, replacing `fitCameraToMap`) |
 | 4.2b | `TileMapManager` from the map | Consume the **terrain sidecar from 4.1b**, not the visual layers — no gid reverse-mapping in the client. Validate at the import boundary | ⬜ blocked on 4.1b |
 | 4.3 | Wire layers to systems | Terrain → costs; collision layer → walkable; fog layer → visibility tracking | ⬜ blocked on 4.1b |
 
@@ -135,7 +136,7 @@ Originally "Tiled Integration & Tooling". The map is **not** hand-authored in th
 
 | Algorithm | Use Case | Complexity |
 |-----------|----------|------------|
-| **Dijkstra** | Reachable tiles within MP budget | O(V + E log V) with a priority queue; O(V²) with array queue — fine for 1024 nodes |
+| **Dijkstra** | Reachable tiles within MP budget | O(V + E log V) with a priority queue; O(V²) with array queue — fine for ~3k nodes (64×48) |
 | **A\*** | Single shortest path (optional) | O(E log V) |
 | **Raycasting (LOS)** | Line of sight from unit to target | O(width × height) per raycast; stops at first blocker |
 
@@ -153,7 +154,7 @@ Originally "Tiled Integration & Tooling". The map is **not** hand-authored in th
   const tx = Math.floor(worldPoint.x / TILE_SIZE);
   const ty = Math.floor(worldPoint.y / TILE_SIZE);
   ```
-- **Camera bounds:** `this.cameras.main.setBounds(0, 0, map.widthInPixels, map.heightInPixels)` → 512×512 world for a 32×32 board at 16 px. Set integer zoom to fit **or** allow drag-pan, not both.
+- **Camera:** fixed integer zoom of 3 (48 px per 16 px source tile) on a window-filling canvas, with `this.cameras.main.setBounds(0, 0, map.widthInPixels, map.heightInPixels)` → 1024×768 world for a 64×48 board. The board is larger than the viewport by design, so the camera **pans**; do not go back to fit-to-window integer zoom, which letterboxed the board and forced it to stay tiny.
 - **Graphics:** `this.add.graphics().fillStyle(0x00ff00).fillRect(x, y, TILE_SIZE, TILE_SIZE)`
 - **Scene management:** only top-level scenes use `this.scene.start()`; phases stay inside `BattleScene`
 - **Tileset name ≠ image name:** the generator writes the tileset's `name` as the *map* name (`level_01`), while `image` holds the PNG filename. Always read the name back out of the parsed map:
@@ -166,8 +167,8 @@ Originally "Tiled Integration & Tooling". The map is **not** hand-authored in th
 
 ## Verification Steps
 
-1. **Map generation:** `npm run map:generate` exits 0 and prints `Verified: 32x32 @ 16px`; running it twice with the same `--seed` produces byte-identical JSON
-2. **Build:** `npm run dev` renders the 512×512 board with grass, forest, water, and mountain tiles — no magenta textures, no holes in the ground layer
+1. **Map generation:** `npm run map:generate` exits 0 and prints `Verified: 64x48 @ 16px`; running it twice with the same `--seed` produces byte-identical JSON
+2. **Build:** `npm run dev` renders the 1024×768 world board with grass, forest, water, and mountain tiles at 48 px per tile on a window-filling canvas, pannable — no magenta textures, no holes in the ground layer
 3. **Pathfinding:** click unit → reachable tiles highlighted (water unreachable, forest costs 2, mountain costs 3)
 4. **Movement:** click reachable tile → unit animates along path over ~200 ms
 5. **Turn flow:** setup → move → attack → end_turn cycles without crashing
@@ -185,7 +186,7 @@ Originally "Tiled Integration & Tooling". The map is **not** hand-authored in th
 | Dijkstra over BFS | BFS ignores terrain costs |
 | Single-scene FSM | Avoids scene-transition resets and state-shuttle code |
 | 4-directional for MVP | 8-way + corner rules is a Phase 5+ concern |
-| 16 px tiles, 32×32 board = 512 px world | Tile size is dictated by the tileset (16 px, unchanged). The **32×32 board is a design choice**, not a consequence of it — the only coupling is `world px = board tiles × 16` |
+| 16 px source tiles, 64×48 board (1024×768 px world), displayed at 48 px/tile | Tile size is dictated by the tileset (16 px, unchanged). The **board size is a design choice** driven by the 48 px/tile display decision, not a consequence of the tileset — the only coupling is `world px = board tiles × 16` |
 
 ---
 
@@ -270,7 +271,7 @@ assets/generator/
 | Issue | Prior | This version |
 |-------|-------|--------------|
 | Tile size | 32×32 px (no tileset of that size existed) | 16×16 px, matching `kenney_tinybattle.tsx` |
-| World size | 1024×1024 px | 512×512 px (32 tiles × 16 px) |
+| World size | 1024×1024 px | 1024×768 px (64×48 tiles × 16 px) |
 | Map source | Hand-authored Tiled project | Generated by `@reldens/tile-map-generator`, seeded |
 | Phase 4 reference | `phase_4.md` did not exist | Written |
 | Architecture diagram | Mixed scene-per-phase with single-scene FSM | Only top-level scenes; FSM inside `BattleScene` |
