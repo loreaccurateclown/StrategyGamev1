@@ -42,9 +42,9 @@
   "roads": {
     "horizontal": 111,
     "vertical": 145,
-    "bends": { "northEast": 128, "northWest": 130, "southEast": 166, "southWest": 164 },
+    "bends": { "northEast": 164, "northWest": 166, "southEast": 128, "southWest": 130 },
     "junctions": { "north": 165, "south": 129, "east": 146, "west": 148, "cross": 147 },
-    "bridges": { "horizontal": 131, "vertical": 167 }
+    "bridges": { "horizontal": 149, "vertical": 167, "plainHorizontal": 131, "waterReflection": 74 }
   },
   "flipFlags": { "horizontal": 2147483648, "vertical": 1073741824, "diagonal": 536870912 },
   "gidMask": 536870911,
