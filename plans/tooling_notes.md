@@ -69,6 +69,12 @@ Lessons learned while setting up this Phaser 4 + TypeScript project on Windows P
   schannel: AcquireCredentialsHandle failed: SEC_E_NO_CREDENTIALS (0x8009030E)
   ```
   Use the OpenSSL backend instead — `git -c http.sslBackend=openssl <cmd>`, or persist it once per repo with `git config http.sslBackend openssl` (already set in this repo). `gh api` is unaffected because it uses Go's TLS stack, which makes it a good way to probe the remote when git cannot.
+- **`git push` needs wider sandbox access than `git status`/`commit`.** The credential helper is a shell wrapper, so git spawns `sh.exe`, which cannot create a signal pipe under confinement:
+  ```
+  0 [main] sh (26284) .../usr/bin/sh.exe: *** fatal error - couldn't create signal pipe, Win32 error 5
+  fatal: could not read Username for 'https://github.com': terminal prompts disabled
+  ```
+  Run the push with `danger-full-access` so the existing gh keyring helper can authenticate. Do **not** work around it by baking a token into `http.extraheader` — that puts a live credential on the command line and in shell history.
 - **Do NOT** set `http.https://github.com/.extraheader="AUTHORIZATION: token ..."` — that sends the REST-API header scheme, which git smart HTTP rejects ("invalid credentials"). The helper handles Basic auth automatically. If you ever see "duplicate Authorization", clear it with `git config --global --unset-all http.https://github.com/.extraheader`.
 - **First push required repo creation:** when pushing to a brand-new remote that doesn't exist yet, git returns "Repository not found" (404) even though auth is fine — you must run `gh repo create StrategyGamev1 --public` first. This already happened; the repo exists now.
 - **Windows gotcha:** the system gitconfig (`C:\Program Files\Git\etc\gitconfig`) had `[credential] helper = manager`, which caused duplicate-header/auth failures. It was removed so gh's helper is used instead. Don't re-add `manager`.

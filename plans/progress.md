@@ -52,7 +52,7 @@ plans/              phase_1.md, plan.md, tooling_notes.md
 
 That is an **early snapshot taken right after project setup** — it has no `src/`, no `scripts/`, no `public/`, and still carries `typescript.json` (pre-rename) and `backup/game.types.ts`. Everything written since — the whole game source, the map generator, the generated map, `phase_4.md`, `progress.md`, `tsconfig.json` — had never been pushed.
 
-**Fix applied:** cloned the remote to a temp folder, copied its `.git` into the working copy (so history and `origin` match the real repo), set `http.sslBackend=openssl` locally, then committed the current state on `main`. Working tree is now clean and the local commit is a normal fast-forward over `96ff4bd`.
+**Fix applied:** cloned the remote to a temp folder, copied its `.git` into the working copy (so history and `origin` match the real repo), set `http.sslBackend=openssl` locally, then committed the current state on `main` and pushed it. Remote `main` is now `5c6df8f` with **239 tracked files** (up from 218), and the local tree is in sync with `origin/main`.
 
 **Two sandbox git gotchas** — both recorded in [`tooling_notes.md`](./tooling_notes.md), because every `git` invocation fails without them:
 
