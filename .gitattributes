@@ -1,0 +1,11 @@
+# Normalize line endings in the repo and on checkout.
+#
+# public/assets/maps/level_01.json is validated for reproducibility by SHA256,
+# and the generator writes LF. Without this, Git's Windows autocrlf rewrites the
+# checked-out file to CRLF, which both dirties the tree after every
+# `npm run map:generate` and breaks cross-machine hash comparisons.
+* text=auto eol=lf
+
+# Binary assets: never touched, never diffed as text.
+*.png binary
+*.jpg binary
