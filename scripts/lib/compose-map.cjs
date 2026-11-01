@@ -246,9 +246,13 @@ function compose(width, height) {
   }
 
   function isWater(x, y) {
-    // Out-of-bounds counts as water so an open-sea entrance at the map edge
-    // stays fill rather than sprouting a bogus sand bank.
-    return !inBounds(x, y) || terrain[idx(x, y)] === WATER;
+    // Out-of-bounds counts as water (open-sea entrance at the map edge), and a
+    // bridge deck sits ON water so it also counts — otherwise the water cell
+    // north of a deck is mistaken for a coastline and draws a grass bank in the
+    // middle of the lake.
+    if (!inBounds(x, y)) return true;
+    const i = idx(x, y);
+    return terrain[i] === WATER || deckCells[i] !== 0;
   }
 
   function waterGid(i) {
