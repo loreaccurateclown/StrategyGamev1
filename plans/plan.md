@@ -185,13 +185,13 @@ Originally "Tiled Integration & Tooling". The map is **not** hand-authored in th
 | Dijkstra over BFS | BFS ignores terrain costs |
 | Single-scene FSM | Avoids scene-transition resets and state-shuttle code |
 | 4-directional for MVP | 8-way + corner rules is a Phase 5+ concern |
-| 16 px × 32 tiles = 512 px world | Dictated by the tileset; world bounds = `map.widthInPixels` |
+| 16 px tiles, 32×32 board = 512 px world | Tile size is dictated by the tileset (16 px, unchanged). The **32×32 board is a design choice**, not a consequence of it — the only coupling is `world px = board tiles × 16` |
 
 ---
 
 ## Further Considerations
 
-1. **Map scaling** — make `GRID_SIZE` configurable so 64×64 / 100×100 work without refactor
+1. **Map scaling** — `GRID_SIZE` is already a CLI flag (`--width` / `--height`), so the *generator* handles 64×64 / 100×100 today. The **renderer does not**: `BattleScene.fitCameraToMap` clamps zoom to `max(1, floor(fitRatio))`, so it can never shrink below 1:1 and any board taller than the 800×600 canvas is cropped, not scaled. With 16 px tiles the ceiling is 37×37 (592 px); 38×38 (608 px) already overflows. Going bigger needs a canvas, `Phaser.Scale`, or camera panning decision first
 2. **Network multiplayer** — serialize state and sync turns over WebSockets
 3. **Mobile input** — tap-to-select, drag-to-move mapping in `InputHandler`
 

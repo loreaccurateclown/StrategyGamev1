@@ -289,5 +289,5 @@ G1 + G2  →  G3 + G4 (+G5)  →  freeze contract  →  4.2b TileMapManager  →
 ### Open questions for 4.1b
 
 - **Coverage target** — ≈37 % (proposed) vs a more open ≈25 %. Only water affects connectivity, so this mostly controls how much cost terrain exists.
-- **Board size** — 32×32 is a CLI flag and 48×48 works today; worth checking 16 px readability at that size before committing.
+- **Board size** — the generator takes `--width` / `--height`, but the **renderer caps the board at 37×37**. `BattleScene.fitCameraToMap` uses `max(1, floor(fitRatio))`, so zoom never drops below 1:1 and the whole board must fit the 800×600 canvas at 1:1: 37×37 = 592 px fits, 38×38 = 608 px is already cropped, and 48×48 = 768 px overflows the 600 px height badly. So 48×48 is *not* a free CLI flag — it needs a canvas-size, `Phaser.Scale`, or camera-panning decision first. Separately, the board renders at **1:1 today** (fitRatio 1.172 → floor → 1), i.e. 512×512 inside an 800×600 canvas with ~144 px side and ~44 px top/bottom margins; if it looks too small, the fix is the canvas/scale setup, not the tile size.
 

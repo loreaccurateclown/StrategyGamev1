@@ -101,6 +101,7 @@ That is an **early snapshot taken right after project setup** — it has no `src
 9. **Placement cost is `(w + 2·freeSpace) × (h + 2·freeSpace)` per element**, and `requiredForBothSidesDuplicator = 2` is hard-coded in the generator. This — not `elementsQuantity` — is what caps terrain density at ~21 %. Details in [`phase_4.md`](./phase_4.md).
 10. **Only water can partition the board.** Forest and mountain are `passable: true` (cost 2/3), so dense contiguous forest/mountain adds tactical cost without ever disconnecting the map. Water is the only terrain that can strand a region, which is why density tuning and the connectivity check are coupled.
 11. **`.vscode/todos.json` is gitignored** (`.gitignore` has `.vscode/*` with only `extensions.json` excepted). The task tracker is therefore local-only and does not travel with the repo.
+12. **32×32 is a design choice, not a scaling artifact.** The tiles are still 16×16 (`kenney_tinybattle.tsx`: `tilewidth=16`, `spacing=1`, `columns=18`, 198 tiles; PNG is 305×186, and `18·16 + 17·1 = 305`, `11·16 + 10·1 = 186`). The only coupling is `world px = tiles × 16`, so 32×32 → 512×512. But there *is* a hard ceiling from rendering: `fitCameraToMap` uses `max(1, floor(fitRatio))`, so zoom never goes below 1:1 and the board must fit the 800×600 canvas unscaled — **37×37 (592 px) is the largest that fits; 38×38 (608 px) is already cropped, and 48×48 (768 px) overflows the height.** Today the board renders at 1:1 (fitRatio 1.172 → zoom 1).
 
 ---
 
