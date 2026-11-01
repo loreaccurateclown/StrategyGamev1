@@ -68,19 +68,21 @@ function compose(width, height) {
   // --- 1. irregular framing band ------------------------------------------
   // Per-side depth arrays with occasional ±1 jitter so the inner edge is not a
   // straight line (AW frames are a clearing cut out of wilderness, not a hedge).
-  function jitteredDepth(base, len) {
+  // Thin, irregular base border: mostly 1 tile deep with gaps (~18 %) so it is
+  // not one contiguous line, plus occasional 2-tile bulges. Edge clumps below
+  // add the natural clumpy masses near the edges.
+  function borderDepth(len) {
     const a = new Int8Array(len);
-    let d = base;
     for (let t = 0; t < len; t++) {
-      if (Math.random() < 0.12) d = clamp(d + (Math.random() < 0.5 ? -1 : 1), 1, base);
-      a[t] = d;
+      const r = Math.random();
+      a[t] = r < 0.18 ? 0 : r < 0.26 ? 2 : 1;
     }
     return a;
   }
-  const bandTop = jitteredDepth(irand(1, 3), width);
-  const bandBottom = jitteredDepth(irand(1, 3), width);
-  const bandLeft = jitteredDepth(irand(1, 3), height);
-  const bandRight = jitteredDepth(irand(1, 3), height);
+  const bandTop = borderDepth(width);
+  const bandBottom = borderDepth(width);
+  const bandLeft = borderDepth(height);
+  const bandRight = borderDepth(height);
 
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
@@ -179,6 +181,29 @@ function compose(width, height) {
     }
   }
 
+  function growEdgeClump(size) {
+    let seed = -1;
+    for (let attempt = 0; attempt < 60; attempt++) {
+      const i = bandCells[Math.floor(Math.random() * bandCells.length)];
+      if (terrain[i] === FOREST && grassNeighbors(i).length > 0) {
+        seed = i;
+        break;
+      }
+    }
+    if (seed === -1) return;
+    const blob = [seed];
+    let guard = 0;
+    while (blob.length < size && guard++ < size * 5) {
+      const c = blob[Math.floor(Math.random() * blob.length)];
+      const ns = grassNeighbors(c);
+      if (ns.length === 0) continue;
+      const next = pick(ns);
+      terrain[next] = FOREST;
+      blob.push(next);
+    }
+  }
+
+  for (let i = 0, count = irand(12, 18); i < count; i++) growEdgeClump(irand(3, 10));
   for (let i = 0, count = irand(8, 12); i < count; i++) growClump(irand(3, 8), FOREST);
   for (let i = 0, count = irand(3, 6); i < count; i++) growClump(irand(2, 4), MOUNTAIN);
 
