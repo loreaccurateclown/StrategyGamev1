@@ -11,19 +11,20 @@ Everything below was re-run this session, not copied from the previous handoff.
 
 | Item | Evidence | Status |
 |------|----------|--------|
-| Board + map | `32x32 @ 16px = 512x512px`, 27 layers, ground layer `1024/1024` non-zero | ✅ |
-| Determinism | `npm run map:generate` (seed 1234) → SHA256 `F3218928…D717DE`, **byte-identical before/after** | ✅ |
+| Board + map | `64x48 @ 16px = 1024x768px` world, **87 layers**, ground layer `3072/3072` non-zero, JSON 551 KB | ✅ |
+| Determinism | `npm run map:generate` (seed 1234) → SHA256 `9BCC73C9…2E17`, **byte-identical before/after**; seeds 999/42/7 also verified | ✅ |
 | Typecheck | `npx tsc --noEmit` → exit 0 | ✅ |
-| Terrain mix | forest 96, water 75, mountain 48 = **219/1024 cells = 21.4 %** | ✅ (sparse) |
-| Palette | `assets/generator/palette.json`, gid ↔ terrain verified against pixel data | ✅ |
-| Version control | restored this session — see below | ✅ |
+| Terrain mix | forest 520 (16.9 %), water 304 (9.9 %), mountain 280 (9.1 %), grass 64.1 % = **35.9 % coverage** | ✅ on target |
+| Connectivity | **1 component, 2548/2548 walkable cells** (border ring + water only blockers) | ✅ |
+| Occupancy band guard | 50×50 with the 64×48 counts correctly fails with "44.2 % outside band 32.0 %..42.0 %" | ✅ guard works |
+| Version control | restored 2026-11-01, remote in sync | ✅ |
 | `Pathfinding.ts` / `Pathfinding.test.ts` | absent | ⬜ |
-| `TileMapManager.ts` | absent | ⬜ |
-| Units, reachable highlighting, movement, FSM | absent — `BattleScene` only loads and draws (100 lines) | ⬜ |
+| `TileMapManager.ts` | absent — blocked on the G3/G4 contract decision | ⬜ |
+| Units, reachable highlighting, movement, FSM | absent — `BattleScene` only loads and draws | ⬜ |
 | Fog, attack, enemy AI | absent | ⬜ |
 | `npm test` | fails **before running any test** — `spawn EPERM` | ⚠️ environment |
 
-The board is still **32×32 on disk** — that is the current, verified state. It changes to **64×48** with step G1 (see [`phase_4.md`](./phase_4.md)); the display strategy that makes 64×48 the right size is settled, but no generator or renderer change has been made yet.
+The board is now **64×48 on disk** — G1 is done. The renderer has **not** been updated yet: `BattleScene` still fits the old 800×600 canvas at zoom 1, so `npm run dev` shows the center of the new board until the 48 px/tile + panning display work lands.
 
 ### `npm test` cannot run in this sandbox
 
@@ -72,8 +73,10 @@ That is an **early snapshot taken right after project setup** — it has no `src
 | `assets/generator/palette.json` | gid ↔ terrain table with evidence inline |
 | `TerrainType` | Grass 1, Forest 2, Water 3, Mountain 4, Road 5 + `TERRAIN_DEFS` |
 | Seeded generator | `npm run map:generate`, deterministic per seed |
-| Map output | `public/assets/maps/level_01.json` — 32×32 @ 16 px, 27 layers |
+| Map output | `public/assets/maps/level_01.json` — 64×48 @ 16 px, 87 layers, 35.9 % occupancy, connectivity-verified |
 | Tileset image copied next to the map | `public/assets/maps/kenney_tinybattle.png` |
+| Density retuned (G1) | forest 20×26, mountain 14×20, water 8×38 cells; `freeSpace` 0/1/0; 35.9 % coverage |
+| `verifyMap` hardened (G2) | occupancy band assertion, passable-area flood fill (1 component), visual↔collision footprint agreement, unknown-gid and overlap checks |
 | Render gate | `_gate_check.ts` covers `make.tilemap` / `addTilesetImage` / `createLayer` |
 | Map renders | browser logs `rendered 14 layers, skipped 13 collision layers (32x32 @ 16px = 512x512px)` |
 | All 4 terrains present | forest 96 cells, water 75, mountain 48, grass = remainder |
@@ -92,7 +95,7 @@ That is an **early snapshot taken right after project setup** — it has no `src
 
 ## Key facts to not relearn
 
-1. **Source tile size is 16 px and never changes; the board moves from 32×32 to 64×48.** What changes is the *display*: a fixed **48 px per tile** (integer 3× camera zoom) on a window-filling, pannable canvas. The world stays 16 px-based (1024×768 px for 64×48) while the screen shows 3072×2304 px. Docs once said "32 px source tiles" — they never were. See fact 12 for the retired fit-to-window approach.
+1. **Source tile size is 16 px and never changes; the board is 64×48** (1024×768 world px) since G1. What changed earlier was the *display plan*: a fixed **48 px per tile** (integer 3× camera zoom) on a window-filling, pannable canvas. The world stays 16 px-based while the screen shows 3072×2304 px. Docs once said "32 px source tiles" — they never were. See fact 12 for the retired fit-to-window approach.
 2. **Gids are 1-based** (`firstgid: 1`). `groundTile: 0` means *no ground layer*, not "gid 0".
 3. **`tilesets[0].name` in the generated JSON is the map name** (`level_01`), not the image filename. `addTilesetImage` needs that name plus a separate texture key.
 4. **Every generator script must be `.cjs`** — `package.json` has `"type": "module"`.
@@ -112,9 +115,9 @@ That is an **early snapshot taken right after project setup** — it has no `src
 ```powershell
 # git needs the sandbox env sanitized first (see tooling_notes.md)
 npm install
-npm run map:generate                # expect "Verified: 32x32 @ 16px, 27 layers"
+npm run map:generate                # expect "Verified: 64x48 @ 16px, 87 layers | occupancy: forest 16.9%, mountain 9.1%, water 9.9%, grass 64.1% | connectivity: 1 component(s), 2548/2548 walkable cells"
 npx tsc --noEmit                    # expect exit 0
-npm run dev                         # expect 14 layers rendered, 512x512
+npm run dev                         # currently shows the board center at old 800x600 zoom - renderer rework pending
 ```
 
 Two runs with the same seed must produce an identical file:
@@ -130,14 +133,12 @@ npm run map:generate -- --seed 1234
 
 ## Suggested next step
 
-**Generator hardening first** ([`phase_4.md`](./phase_4.md), steps G1–G6), then the client work it unblocks:
+**G1 and G2 are done** (density at 35.9 % with proven connectivity; `verifyMap` now asserts occupancy, connectivity, and footprint agreement). Next:
 
-1. **G1** retune density for the new **64×48** board (≈36 % target) using larger dense clumps and `freeSpace 0` for forest/mountain, keeping water modest — counts scale ~5×, since the current set drops to 7.1 % on 3072 cells.
-2. **G2** extend `verifyMap` with a connectivity flood-fill, an occupancy band assertion, and a visual/collision footprint agreement check.
-3. **G3** emit a `level_01.terrain.json` sidecar so the client never reverse-maps gids.
-4. **G4** collapse 27 layers to ~4 via `autoMergeLayersByKeys`.
-5. **Freeze the map contract**, then write `TileMapManager` (4.2b) against it — once, not twice.
-6. **`Pathfinding.ts` + tests** can run in parallel the whole time (own fixtures, no map dependency).
+1. **G3** emit a `level_01.terrain.json` sidecar so the client never reverse-maps gids — **pending the user's contract decision** (G3+G4 recommended; G3-only possible).
+2. **G4** collapse 87 layers to ~4 via `autoMergeLayersByKeys` (more valuable now: the JSON is 551 KB and 44 visual layers would each be a 64×48 texture).
+3. **Freeze the map contract**, then write `TileMapManager` (4.2b) against it — once, not twice.
+4. **`Pathfinding.ts` + tests** can run in parallel the whole time (own fixtures, no map dependency).
 
 ---
 

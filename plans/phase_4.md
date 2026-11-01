@@ -2,7 +2,7 @@
 
 **Goal:** A reproducible, scripted pipeline that turns the Kenney tiny-battle tileset into a playable board, plus the code that reads that board into the game's own terrain model. No hand-authoring in the Tiled editor.
 
-**Status:** 4.1 and 4.2a are done. **4.1b (generator hardening, G1–G6) is the next body of work and is generator-owned.** 4.2b and 4.3 are not started and are blocked on 4.1b — the map contract has to be frozen before client code reads it.
+**Status:** 4.1, 4.1b-G1/G2, and 4.2a are done. **G3/G4 (sidecar + layer merge) are next and await the contract decision**; 4.2b and 4.3 are not started and stay blocked on that decision — the map contract has to be frozen before client code reads it.
 
 ---
 
@@ -71,12 +71,12 @@ public/assets/maps/             # generator output (committed)
 ### Command
 
 ```powershell
-npm run map:generate                              # seed 1234, 32×32
+npm run map:generate                              # seed 1234, 64×48
 npm run map:generate -- --seed 999                # different layout
-npm run map:generate -- --seed 1234 --width 48 --height 48
+npm run map:generate -- --seed 1234 --width 50 --height 50   # any size; 64×48 counts fail the band on 50×50
 ```
 
-The script **fails loudly** if the generated map disagrees with `palette.json`: wrong board size, wrong tile size, `firstgid !== 1`, wrong columns/spacing/tilecount, any `0` in the ground layer, or a missing tileset image.
+The script **fails loudly** if the generated map disagrees with `palette.json`: wrong board size, wrong tile size, `firstgid !== 1`, wrong columns/spacing/tilecount, any `0` in the ground layer, a missing tileset image, an unknown gid, overlapping elements, occupancy outside the 32–42 % band, a partitioned walkable area, or a visual/collision footprint mismatch.
 
 ### Seeding
 
@@ -104,7 +104,7 @@ The generator calls bare `Math.random()` and exposes no seed option, so `scripts
 Elements are written as ASCII art so shapes are reviewable in a diff:
 
 ```js
-const FOREST_ROWS = [".TtT.", "TTtTT", "TTTtT", ".TtT."];
+const FOREST_ROWS = [".TtfT.", "TTttTT", "TftTtT", "TTtffT", ".TtTT."];
 ```
 
 Every element produces **two** layers: `<key>-visual` and `<key>-collisions`. The collision layer is mandatory — the generator matches collision layers by *name substring*, so without it the path router carves straight through a pond.
@@ -127,23 +127,23 @@ Every element produces **two** layers: `<key>-visual` and `<key>-collisions`. Th
 1. `preload` — `load.tilemapTiledJSON('level-01', 'assets/maps/level_01.json')` and `load.image('kenney-tinybattle', 'assets/maps/kenney_tinybattle.png')`.
 2. `create` — `make.tilemap`, then `addTilesetImage(map.tilesets[0].name, 'kenney-tinybattle')`.
 3. Render one `createLayer` per layer whose name does **not** contain `collisions`.
-4. `fitCameraToMap` — integer zoom (`Math.max(1, Math.floor(fitRatio))`) so 16 px art stays crisp, bounds set from `map.widthInPixels`.
+4. `fitCameraToMap` — integer zoom (`Math.max(1, Math.floor(fitRatio))`) so 16 px art stays crisp, bounds set from `map.widthInPixels`. **Superseded by the 48 px/tile + panning decision** — this step renders only the board center until the display rework lands.
 
-Verified output: `rendered 14 layers, skipped 13 collision layers (32x32 @ 16px = 512x512px)`.
+Historical verified output (32×32 era): `rendered 14 layers, skipped 13 collision layers (32x32 @ 16px = 512x512px)`. Current default run is 64×48 with 87 layers (44 rendered / 43 collision).
 
 Layer inventory for a default run:
 
 | Layer | Purpose | Rendered |
 |-------|---------|----------|
-| `ground` | grass base, 1024/1024 cells, all gid 1 | ✅ |
-| `ground-variations` | 100 cells of gids 1–3 | ✅ |
-| `collisions-map-border` | 124 cells, board edge | ❌ (blocker) |
-| `water{0..2}-visual` | 25 cells each | ✅ |
-| `water{0..2}-collisions` | 25 cells each | ❌ (blocker) |
-| `forest{0..5}-visual` | 16 cells each | ✅ |
-| `forest{0..5}-collisions` | 16 cells each | ❌ (blocker) |
-| `mountain{0..2}-visual` | 16 cells each | ✅ |
-| `mountain{0..2}-collisions` | 16 cells each | ❌ (blocker) |
+| `ground` | grass base, 3072/3072 cells, all gid 1 | ✅ |
+| `ground-variations` | ~10 % of cells, gids 1–3 | ✅ |
+| `collisions-map-border` | 220 cells, board edge | ❌ (blocker) |
+| `water{0..7}-visual` | 38 cells each | ✅ |
+| `water{0..7}-collisions` | 38 cells each | ❌ (blocker) |
+| `forest{0..19}-visual` | 26 cells each | ✅ |
+| `forest{0..19}-collisions` | 26 cells each | ❌ (blocker) |
+| `mountain{0..13}-visual` | 20 cells each | ✅ |
+| `mountain{0..13}-collisions` | 20 cells each | ❌ (blocker) |
 
 ---
 
@@ -189,9 +189,9 @@ Both HTML tools read `../assets/import/kenney_tiny-battle/Tilemap/tilemap.png` a
 
 ---
 
-## 4.1b — Generator hardening roadmap (G1–G6) ⬜
+## 4.1b — Generator hardening roadmap (G1–G6)
 
-**Status:** next body of work, generator-owned. G1/G2 must land before the client reads the map; G3/G4 freeze the contract that 4.2b is written against; G5/G6 are polish. This section supersedes the earlier "open tuning items" list.
+**Status:** G1, G2, and G5 are done (2026-11-01). G3/G4 are next and await the contract decision; G6 shorelines are deferred by the user. This section supersedes the earlier "open tuning items" list.
 
 ### Why density is capped at 21 % — the actual mechanism
 
@@ -217,7 +217,7 @@ Read out of the package source, not inferred from experiments:
 - **Dense, contiguous forest/mountain** adds tactical movement cost and *never* disconnects the map. Adjacency is desirable — it reads as a grove or a massif.
 - **Water is the only terrain that can strand a region.** It is the one thing density tuning can break, which is why G1 and G2 are coupled and must land together.
 
-### G1 — Retune density for the larger board
+### G1 — Retune density for the larger board ✅ (done 2026-11-01)
 
 The board grows from 32×32 (1024 cells) to **64×48 (3072 cells)** as part of the 48 px/tile display decision — see [`plan.md`](./plan.md) decisions table. Verified safe: `npm run map:generate -- --width 64 --height 48` holds the requested size exactly with **no silent growth**, so the size change alone is not the risk. At the current element counts occupancy collapses to **7.1 %** (219/3072), which is why the counts have to scale roughly 5×, not just the reserved space.
 
@@ -232,21 +232,24 @@ Starting point, to be iterated by measurement rather than treated as a spec:
 
 The reservation total stays near half the board rather than the 58–60 % that was already proven on 1024 cells: a 3072-cell board has more room to breathe, and staying well under the limit keeps `placeRejectResolver` from having to rearrange or grow. Denser clumps also improve the art (`f = 0` lets a grove be a grove instead of a scatter of separated clumps).
 
-### G2 — Make `verifyMap` prove the map is playable
+**Shipped as proposed, verified on seeds 1234, 999, 42, 7:** `Verified: 64x48 @ 16px, 87 layers | occupancy: forest 16.9 %, mountain 9.1 %, water 9.9 %, grass 64.1 % | connectivity: 1 component(s), 2548/2548 walkable cells`. No silent growth on any seed, byte-identical output per seed. The 50×50 probe with these counts correctly fails the band (44.2 %), which is expected — 50×50 would need counts scaled ≈0.81×, and it still letterboxes at 1440p@100 % (viewport is 53 tiles wide > 50).
 
-`verifyMap` currently checks board size, gids, zeros in the ground layer, and that the tileset image was copied. It does **not** check the two things that silently ruin a dense map:
+### G2 — Make `verifyMap` prove the map is playable ✅ (done 2026-11-01)
 
-1. **Connectivity** — flood-fill the passable interior (grass + forest + mountain, excluding the `collisions-map-border` ring, which is 32+32+30+30 = 124 cells) from one known free cell and assert a **single component**. This is what makes G1 safe, and it belongs in the generator, not the client.
-2. **Occupancy band** — print per-terrain and total coverage, and assert a band (e.g. 30–48 %) so density cannot silently regress.
-3. **Collision/visual agreement** — assert each element's `<key>-collisions` footprint matches its `<key>-visual` footprint. Currently unverified, and a mismatch would make walkability disagree with what the player sees.
-4. Keep the existing board-size assertion as the hard gate against silent growth.
+`verifyMap` checked board size, gids, zeros in the ground layer, and that the tileset image was copied. It did **not** check the things that silently ruin a dense map — now it does:
+
+1. **Connectivity** — flood-fills the passable interior (grass + forest + mountain; only the `collisions-map-border` ring — 220 cells on 64×48 — and water block) and asserts a **single component**. Implemented in `verifyMap`; prints `connectivity: N component(s), X/Y walkable cells`.
+2. **Occupancy band** — prints per-terrain and total coverage and asserts the 32–42 % band (target 36 %), so density cannot silently regress.
+3. **Collision/visual agreement** — asserts each element's `<key>-collisions` footprint matches its `<key>-visual` footprint, so walkability can never disagree with what the player sees.
+4. **Unknown gids and overlaps** — every element-cell gid must resolve through the palette (hard error otherwise) and no two elements may overlap; both checked at generation time instead of in the browser.
+5. The existing board-size assertion remains the hard gate against silent growth.
 
 ### G3 — Emit a `level_01.terrain.json` sidecar
 
 The generator already knows each gid's terrain when it writes the layer, so it should write the resolved grid as well:
 
 ```json
-{ "width": 32, "height": 32, "tileSize": 16, "seed": 1234,
+{ "width": 64, "height": 48, "tileSize": 16, "seed": 1234,
   "paletteHash": "…", "terrain": [[1,1,2,…], …] }
 ```
 
@@ -256,19 +259,19 @@ The generator already knows each gid's terrain when it writes the layer, so it s
 
 This replaces 4.2b's reverse-mapping entirely.
 
-### G4 — Collapse 27 layers to ~4
+### G4 — Collapse 87 layers to ~4
 
 `MapLayersComposer` already supports `autoMergeLayersByKeys`, which merges by name substring and buckets overlapping members so draw order survives (`map-layers-composer.js:101`, `layer-data-factory.js:118`).
 
 - `autoMergeLayersByKeys: ['visual', 'collisions']`
-- 14 rendered layers → 3 (`ground`, `ground-variations`, `merge-visual`); 13 collision layers → 1 (`merge-collisions`, still skipped by the existing substring check).
-- Each `TilemapLayer` is a full 32×32 render object; 14 of them for 219 tiles is real cost, and a 4-layer contract is far friendlier for the client.
+- 44 rendered layers → 3 (`ground`, `ground-variations`, `merge-visual`); 43 collision layers → 1 (`merge-collisions`, still skipped by the existing substring check).
+- Each `TilemapLayer` is a full 64×48 render object; 44 of them for 1104 tiles is real memory and fill-rate cost (the JSON is already 551 KB), and a 4-layer contract is far friendlier for the client.
 - **Caveat:** merging `ground` with `ground-variations` does *not* collapse them — the variations overlap the ground everywhere, so the bucketing stacks them. Leave both alone.
 - Layer names change, so this must land **with G3, before 4.2b is written**.
 
-### G5 — Variant coverage
+### G5 — Variant coverage ✅ (done with G1)
 
-The ASCII legends reference two chars per element, so forest uses 2 of 5 variants, water 2 of 3, mountain 2 of 9. A third char per element costs nothing and removes the flat repeated-tile look.
+The ASCII legends previously referenced two chars per element (forest 2/5 variants, water 2/3, mountain 2/9). The G1 art uses **three variants per element** (forest `T t f`, water `w W s`, mountain `m M n`), so the terrain no longer reads as flat repeats.
 
 ### G6 — Shoreline autotiling (last)
 
@@ -282,15 +285,15 @@ G1 + G2  →  G3 + G4 (+G5)  →  freeze contract  →  4.2b TileMapManager  →
 
 ### Definition of done for 4.1b
 
-- `npm run map:generate` prints occupancy per terrain and total inside the asserted band, plus a connectivity result (1 component).
-- Same seed still produces a byte-identical `level_01.json` **and** `level_01.terrain.json`; a different seed produces different ones.
-- Board is still exactly `64x48 @ 16px` (1024×768 px world), so the silent-growth guard still passes.
-- `level_01.terrain.json` re-derived from the visual layers matches the emitted file exactly.
-- `npx tsc --noEmit` clean, and the map still renders in `npm run dev`.
+- ✅ `npm run map:generate` prints occupancy per terrain inside the asserted band, plus a connectivity result (1 component).
+- ✅ Same seed produces a byte-identical `level_01.json` (verified: seeds 1234, 999, 42, 7); a different seed produces a different one.
+- ✅ Board is exactly `64x48 @ 16px` (1024×768 px world) — the silent-growth guard passes on every tested seed.
+- ⬜ `level_01.terrain.json` sidecar — pending the G3 contract decision.
+- ⬜ Map renders correctly at 48 px/tile with panning — renderer-side display work, pending.
 
 ### Open questions for 4.1b
 
-- **Coverage target** — ≈36 % (proposed) vs a more open ≈25 %. Only water affects connectivity, so this mostly controls how much cost terrain exists.
+- **Coverage target** — **resolved 2026-11-01: 36 %**, matching the user's choice to keep the denser feel over the AW-authentic ~20–25 % band found in the map-composition research. Only water affects connectivity, and the flood-fill check proves it safe.
 
 ### Display and board size — decided 2026-11-01
 

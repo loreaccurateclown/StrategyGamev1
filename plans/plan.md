@@ -110,7 +110,7 @@ Originally "Tiled Integration & Tooling". The map is **not** hand-authored in th
 | Step | Task | Details | Status |
 |------|------|---------|--------|
 | 4.1 | Map generation pipeline | `npm run map:generate` → `public/assets/maps/level_01.json` via `@reldens/tile-map-generator@0.64.0`, seeded for reproducibility. Terrain: grass/forest/water/mountain. Tile size 16 px | ✅ done |
-| 4.1b | Generator hardening | Raise density from 21 % by improving placement efficiency (`freeSpace` 0 for forest/mountain, larger clumps, water kept modest), add connectivity + occupancy assertions to `verifyMap`, emit a `level_01.terrain.json` sidecar, and collapse 27 layers to ~4 | ⬜ next |
+| 4.1b | Generator hardening | Raise density from 21 % by improving placement efficiency (`freeSpace` 0 for forest/mountain, larger clumps, water kept modest), add connectivity + occupancy assertions to `verifyMap`, emit a `level_01.terrain.json` sidecar, and collapse 87 layers to ~4 | 🔶 G1/G2/G5 done (35.9 % coverage, connectivity-proven); G3/G4 pending contract decision |
 | 4.2a | Render the generated map | `BattleScene` loads the JSON + tileset texture with `load.tilemapTiledJSON` / `load.image`, builds one `createLayer` per non-collision layer, fits the camera to the board | ✅ done, **needs revision** for the 48 px/tile + panning decision (fixed zoom 3 on a window-filling canvas, replacing `fitCameraToMap`) |
 | 4.2b | `TileMapManager` from the map | Consume the **terrain sidecar from 4.1b**, not the visual layers — no gid reverse-mapping in the client. Validate at the import boundary | ⬜ blocked on 4.1b |
 | 4.3 | Wire layers to systems | Terrain → costs; collision layer → walkable; fog layer → visibility tracking | ⬜ blocked on 4.1b |
@@ -167,7 +167,7 @@ Originally "Tiled Integration & Tooling". The map is **not** hand-authored in th
 
 ## Verification Steps
 
-1. **Map generation:** `npm run map:generate` exits 0 and prints `Verified: 64x48 @ 16px`; running it twice with the same `--seed` produces byte-identical JSON
+1. **Map generation:** `npm run map:generate` exits 0 and prints `Verified: 64x48 @ 16px, 87 layers | occupancy: forest 16.9%, mountain 9.1%, water 9.9%, grass 64.1% | connectivity: 1 component(s), 2548/2548 walkable cells`; running it twice with the same `--seed` produces byte-identical JSON
 2. **Build:** `npm run dev` renders the 1024×768 world board with grass, forest, water, and mountain tiles at 48 px per tile on a window-filling canvas, pannable — no magenta textures, no holes in the ground layer
 3. **Pathfinding:** click unit → reachable tiles highlighted (water unreachable, forest costs 2, mountain costs 3)
 4. **Movement:** click reachable tile → unit animates along path over ~200 ms

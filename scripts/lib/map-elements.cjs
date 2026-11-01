@@ -25,35 +25,40 @@ const WATER = palette.terrain.water.variants;
 const MOUNTAIN = palette.terrain.mountain.variants;
 
 /**
- * Forest: a 5x4 clump of tree tiles. The outer corners stay empty so clumps read
- * as rounded rather than as rectangular blocks.
+ * Forest: a 6x5 grove, 26 of 30 cells filled. The outer corners stay empty so
+ * groves read as rounded rather than as rectangular blocks. Three of the five
+ * palette variants are used (T, t, f).
  */
 const FOREST_ROWS = [
-  ".TtT.",
-  "TTtTT",
-  "TTTtT",
-  ".TtT.",
+  ".TtfT.",
+  "TTttTT",
+  "TftTtT",
+  "TTtffT",
+  ".TtTT.",
 ];
 
 /**
- * Water: a 5x5 pond. Variants are sprinkled in so the surface is not flat blue.
+ * Water: a 7x6 pond, 38 of 42 cells filled (corners rounded). Variants are
+ * sprinkled in so the surface is not flat blue.
  */
 const WATER_ROWS = [
-  "wwWww",
-  "wWwww",
-  "wwwww",
-  "wwwWw",
-  "wWwww",
+  ".wwWww.",
+  "wWswWww",
+  "wwWwWww",
+  "wwwWwww",
+  "wWwwwws",
+  ".wWwww.",
 ];
 
 /**
- * Mountain: a 4x4 massif built from the densest stone tiles.
+ * Mountain: a 6x4 massif, 20 of 24 cells filled, built from the densest stone
+ * tiles with three variants (m, M, n).
  */
 const MOUNTAIN_ROWS = [
-  "mmMm",
-  "mmmm",
-  "mMmm",
-  "mmMm",
+  ".mmMm.",
+  "mMMnmM",
+  "mmnMmm",
+  ".mMmm.",
 ];
 
 /** Wraps rows in a layer pair: visual first (the generator sizes from it), then collisions. */
@@ -68,19 +73,19 @@ const layerElements = {
   forest: elementLayers(
     "forest",
     FOREST_ROWS,
-    { ".": 0, T: FOREST[0], t: FOREST[1] },
+    { ".": 0, T: FOREST[0], t: FOREST[1], f: FOREST[2] },
     FOREST[0]
   ),
   water: elementLayers(
     "water",
     WATER_ROWS,
-    { w: WATER[0], W: WATER[1] },
+    { ".": 0, w: WATER[0], W: WATER[1], s: WATER[2] },
     WATER[0]
   ),
   mountain: elementLayers(
     "mountain",
     MOUNTAIN_ROWS,
-    { m: MOUNTAIN[0], M: MOUNTAIN[1] },
+    { ".": 0, m: MOUNTAIN[0], M: MOUNTAIN[1], n: MOUNTAIN[2] },
     MOUNTAIN[0]
   ),
 };

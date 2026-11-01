@@ -25,9 +25,22 @@ const { RandomMapGenerator } = require("@reldens/tile-map-generator");
 
 const REPO_ROOT = path.join(__dirname, "..");
 const DEFAULT_SEED = 1234;
-const DEFAULT_MAP_WIDTH = 32;
-const DEFAULT_MAP_HEIGHT = 32;
+const DEFAULT_MAP_WIDTH = 64;
+const DEFAULT_MAP_HEIGHT = 48;
 const MAP_NAME = "level_01";
+
+/**
+ * Layers whose name contains this marker carry collision data only. They are
+ * skipped by the terrain-grid resolution and never rendered by the client.
+ */
+const COLLISION_LAYER_MARKER = "collisions";
+
+/**
+ * Acceptable obstacle-coverage band as a fraction of the board. The design
+ * target is ~36% (forest ~17%, mountain ~9%, water ~10%); the band turns silent
+ * regressions of that density into a generation failure.
+ */
+const OCCUPANCY_BAND = [0.32, 0.42];
 
 /** Parses `--key value` / `--key=value` pairs. */
 function parseArgs(argv) {
@@ -102,15 +115,18 @@ const mapData = {
 
   // --- placement constraints ---
   layerElements,
-  // Budget check for a 32x32 board (1024 cells). Each placement reserves
+  // Budget check for a 64x48 board (3072 cells). Each placement reserves
   // (width + 2*freeSpace) x (height + 2*freeSpace):
-  //   forest   6 x (5+2)*(4+2) = 252
-  //   water    3 x (5+4)*(5+4) = 243
-  //   mountain 3 x (4+2)*(4+2) = 108
-  // ~59% occupancy leaves room to place; the earlier 10/5/4 set needed ~95% and
-  // made the generator grow the board to 32x44 instead.
-  elementsQuantity: { forest: 6, water: 3, mountain: 3 },
-  elementsFreeSpaceAround: { forest: 1, water: 2, mountain: 1 },
+  //   forest   20 x (6+0)*(5+0) = 600
+  //   water     8 x (7+2)*(6+2) = 576
+  //   mountain 14 x (6+0)*(4+0) = 336
+  // 1512/3072 = 49% reserved, well under the growth threshold. freeSpace 0 on
+  // forest/mountain is deliberate: they are passable (cost 2/3), so contiguous
+  // groves and ridges add tactical cost without disconnecting the map. Water is
+  // the only impassable terrain and keeps freeSpace 1 so ponds cannot touch;
+  // verifyMap flood-fills the passable cells to prove no pond wall partitions it.
+  elementsQuantity: { forest: 20, water: 8, mountain: 14 },
+  elementsFreeSpaceAround: { forest: 0, water: 1, mountain: 0 },
   minimumElementsFreeSpaceAround: 1,
   minimumDistanceFromBorders: 1,
   blockMapBorder: true,
@@ -207,13 +223,128 @@ function verifyMap(map) {
     problems.push(`tileset image was not copied to ${path.relative(REPO_ROOT, imagePath)}`);
   }
 
+  // --- gid -> terrain map, resolved from the palette at generation time ---
+  const gidToTerrain = new Map();
+  for (const [terrain, def] of Object.entries(palette.terrain)) {
+    for (const gid of new Set([def.primary, ...def.variants])) {
+      if (gidToTerrain.has(gid) && gidToTerrain.get(gid) !== terrain) {
+        problems.push(`palette.json maps gid ${gid} to more than one terrain`);
+      }
+      gidToTerrain.set(gid, terrain);
+    }
+  }
+
+  // --- terrain grid from the visual layers ---
+  // Ground layers (all grass, already verified zero-free) are the implicit
+  // base; every element cell must map through the palette and no two elements
+  // may overlap.
+  const total = map.width * map.height;
+  const cellTerrain = new Array(total).fill(null);
+  for (const layer of map.layers) {
+    if (layer.name.includes(COLLISION_LAYER_MARKER)) continue;
+    if (layer.name === "ground" || layer.name === "ground-variations") continue;
+    for (let i = 0; i < layer.data.length; i++) {
+      const gid = layer.data[i];
+      if (gid === 0) continue;
+      const terrain = gidToTerrain.get(gid);
+      if (!terrain) {
+        problems.push(`unknown gid ${gid} in layer "${layer.name}" at cell ${i}`);
+        continue;
+      }
+      if (cellTerrain[i] !== null && cellTerrain[i] !== terrain) {
+        problems.push(`element overlap at cell ${i} (${cellTerrain[i]} vs ${terrain})`);
+      }
+      cellTerrain[i] = terrain;
+    }
+  }
+
+  const counts = { grass: 0, forest: 0, water: 0, mountain: 0 };
+  for (const terrain of cellTerrain) counts[terrain ?? "grass"]++;
+
+  const pct = (n) => ((100 * n) / total).toFixed(1) + "%";
+  const occupied = total - counts.grass;
+  if (occupied / total < OCCUPANCY_BAND[0] || occupied / total > OCCUPANCY_BAND[1]) {
+    problems.push(
+      `obstacle coverage ${pct(occupied)} outside band ` +
+        `${pct(Math.round(OCCUPANCY_BAND[0] * total))}..${pct(Math.round(OCCUPANCY_BAND[1] * total))}`
+    );
+  }
+  for (const terrain of ["forest", "water", "mountain"]) {
+    if (counts[terrain] === 0) problems.push(`no ${terrain} tiles on the board`);
+  }
+
+  // --- connectivity: the passable interior must be one component ---
+  // Only the border ring and water block movement in-game (forest/mountain are
+  // passable), so those are the only blockers here.
+  const blocked = new Uint8Array(total);
+  const border = map.layers.find((layer) => layer.name === "collisions-map-border");
+  if (border) {
+    for (let i = 0; i < total; i++) if (border.data[i] !== 0) blocked[i] = 1;
+  }
+  for (let i = 0; i < total; i++) if (cellTerrain[i] === "water") blocked[i] = 1;
+
+  let walkable = 0;
+  let components = 0;
+  let largest = 0;
+  const seen = new Uint8Array(total);
+  for (let i = 0; i < total; i++) if (!blocked[i]) walkable++;
+  for (let start = 0; start < total; start++) {
+    if (blocked[start] || seen[start]) continue;
+    components++;
+    let size = 0;
+    const stack = [start];
+    seen[start] = 1;
+    while (stack.length > 0) {
+      const cell = stack.pop();
+      size++;
+      const x = cell % map.width;
+      const y = (cell - x) / map.width;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= map.width || ny >= map.height) continue;
+        const ni = ny * map.width + nx;
+        if (!blocked[ni] && !seen[ni]) {
+          seen[ni] = 1;
+          stack.push(ni);
+        }
+      }
+    }
+    if (size > largest) largest = size;
+  }
+  if (components !== 1) {
+    problems.push(
+      `walkable area is split into ${components} components (largest ${largest}/${walkable} cells)`
+    );
+  }
+
+  // --- every element's collision layer must cover exactly its visual footprint ---
+  for (const layer of map.layers) {
+    if (!layer.name.endsWith("-visual")) continue;
+    const collision = map.layers.find(
+      (l) => l.name === layer.name.replace(/-visual$/, "-collisions")
+    );
+    if (!collision) {
+      problems.push(`no collision layer for "${layer.name}"`);
+      continue;
+    }
+    for (let i = 0; i < total; i++) {
+      if ((layer.data[i] !== 0) !== (collision.data[i] !== 0)) {
+        problems.push(`footprint mismatch in "${layer.name}" at cell ${i}`);
+        break;
+      }
+    }
+  }
+
   if (problems.length > 0) {
     throw new Error("Generated map failed verification:\n  - " + problems.join("\n  - "));
   }
 
   console.log(
-    `Verified: ${map.width}x${map.height} @ ${map.tilewidth}px, ` +
-      `${map.layers.length} layers (${map.layers.map((layer) => layer.name).join(", ")})`
+    `Verified: ${map.width}x${map.height} @ ${map.tilewidth}px, ${map.layers.length} layers | ` +
+      `occupancy: forest ${pct(counts.forest)}, mountain ${pct(counts.mountain)}, ` +
+      `water ${pct(counts.water)}, grass ${pct(counts.grass)} | ` +
+      `connectivity: ${components} component(s), ${largest}/${walkable} walkable cells`
   );
 }
 
