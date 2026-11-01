@@ -1,7 +1,7 @@
 # Plan: Advance Wars-Style 2D Turn-Based Strategy Game in Phaser 4 + TypeScript
 
 ## TL;DR
-Build an Advance Wars-inspired turn-based strategy game using **Phaser 4 (TypeScript)** on a **32×32 tile grid**. Use a **single `BattleScene` with an internal FSM** for phase management, custom **Dijkstra pathfinding** with per-tile movement costs, and a **three-state fog-of-war** model. Start with a minimal playable vertical slice — click unit → highlight reachable tiles → click tile → unit moves — before adding combat, AI, or Tiled-based map authoring.
+Build an Advance Wars-inspired turn-based strategy game using **Phaser 4 (TypeScript)** on a **32×32 tile board with 16×16 px tiles** (a 512×512 px world). Use a **single `BattleScene` with an internal FSM** for phase management, custom **Dijkstra pathfinding** with per-tile movement costs, and a **three-state fog-of-war** model. Maps are produced procedurally by `@reldens/tile-map-generator` from the Kenney tiny-battle tileset — see [`phase_4.md`](./phase_4.md) and [`progress.md`](./progress.md).
 
 ---
 
@@ -9,7 +9,7 @@ Build an Advance Wars-inspired turn-based strategy game using **Phaser 4 (TypeSc
 
 | Decision | Rationale |
 |----------|-----------|
-| **Tile size: 32×32 px** | Standard for strategy games — room for detailed sprites and per-tile UI overlays |
+| **Tile size: 16×16 px** | Matches the only tileset the project has (`assets/tilemaps/kenney_tinybattle.tsx`: 16 px, 1 px spacing, 18 columns, 198 tiles). A 32×32 board is therefore 512×512 px, not 1024×1024 |
 | **Phaser 4 + TypeScript** | Type safety; scene system maps cleanly to top-level game states |
 | **Square grid, 4-directional movement for MVP** | Simplest correct model. Diagonals, "don't cut corners" LOS, and 8-way adjacency are deferred to Phase 5+ |
 | **Dijkstra over BFS for pathfinding** | BFS assumes uniform edge weight; terrain costs break that assumption |
@@ -41,15 +41,16 @@ Build an Advance Wars-inspired turn-based strategy game using **Phaser 4 (TypeSc
 │  ├─ FogOfWar         ├─ LineOfSight       ├─ TurnState     │
 │  └─ InputHandler     └─ UIManager         └─ AudioManager  │
 ├─────────────────────────────────────────────────────────────┤
-│  Tiled Map Layers (Phase 4+)                                │
-│  ├─ Terrain       (tile indices)                            │
-│  ├─ Collision     (walkable vs. blocked)                    │
-│  ├─ FogOfWar      (unexplored / explored / visible)         │
-│  └─ Objects       (unit placement markers, objectives)      │
+│  Generated Map Layers (Phase 4)                              │
+│  ├─ ground                  (grass base, no zeros)          │
+│  ├─ ground-variations       (grass variants)                │
+│  ├─ *-visual                (forest / water / mountain)      │
+│  ├─ *-collisions            (blocker masks)                  │
+│  └─ collisions-map-border   (board edge)                     │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**Phase 1 only implements `BattleScene`** (starting directly via `main.ts`). `BootScene`, `SetupScene`, and `GameOverScene` are added in later phases.
+**Phase 1 renders only `BattleScene`** (started directly via `main.ts`). `BootScene`, `SetupScene`, and `GameOverScene` are added in later phases.
 
 ---
 
@@ -59,7 +60,9 @@ Each phase has a canonical spec in its own file. This document gives the goal, t
 
 ### [Phase 1: Core Loop Vertical Slice (Days 1–2)](./phase_1.md)
 
-**Goal:** A single runnable `BattleScene` where you can **click a unit → see reachable tiles → click a tile → it moves**, on a 32×32 grid with terrain costs. No Tiled, no sprites, no fog, no attack, no AI, no scene-per-phase. Only `BattleScene` is implemented (starting directly via `main.ts`).
+**Goal:** A single runnable `BattleScene` where you can **click a unit → see reachable tiles → click a tile → it moves**, on a 32×32 tile board of 16×16 px tiles, with terrain costs. No sprites beyond the tileset, no fog, no attack, no AI.
+
+**Status:** the board, the generated map, and its rendering are done. Movement, pathfinding wiring, and the FSM are not. See [`progress.md`](./progress.md).
 
 **Full step-by-step spec, DoD, Pathfinding interface, and tests:** see [`phase_1.md`](./phase_1.md).
 
@@ -99,15 +102,19 @@ Each phase has a canonical spec in its own file. This document gives the goal, t
 
 ---
 
-### Phase 4: Tiled Integration & Tooling (Days 10–12)
+### Phase 4: Map Pipeline & Tilemap Integration
 
-| Step | Task | Details |
-|------|------|---------|
-| 4.1 | Create Tiled map project | 32×32 grid; tilesets for grass/water/mountain/forest; layers for terrain/collision/fog/objects |
-| 4.2 | Swap `TileMapManager` to Phaser Tilemap API | Load `.json` via `this.load.tilemapTiledJSON()`; parse to `number[][]` |
-| 4.3 | Wire Tiled layers to systems | Terrain → costs; Collision → walkable; FogOfWar → visibility tracking |
+Originally "Tiled Integration & Tooling". The map is **not** hand-authored in the Tiled editor; it is generated by a script from the Kenney tileset. Status: steps 4.1 and 4.2a are done. **4.1b (generator hardening, G1–G6) is next and is generator-owned**; 4.2b and 4.3 are blocked on it, because the map contract has to be frozen before the client reads it.
 
-**Full spec:** see `phase_4.md`.
+| Step | Task | Details | Status |
+|------|------|---------|--------|
+| 4.1 | Map generation pipeline | `npm run map:generate` → `public/assets/maps/level_01.json` via `@reldens/tile-map-generator@0.64.0`, seeded for reproducibility. Terrain: grass/forest/water/mountain. Tile size 16 px | ✅ done |
+| 4.1b | Generator hardening | Raise density from 21 % by improving placement efficiency (`freeSpace` 0 for forest/mountain, larger clumps, water kept modest), add connectivity + occupancy assertions to `verifyMap`, emit a `level_01.terrain.json` sidecar, and collapse 27 layers to ~4 | ⬜ next |
+| 4.2a | Render the generated map | `BattleScene` loads the JSON + tileset texture with `load.tilemapTiledJSON` / `load.image`, builds one `createLayer` per non-collision layer, fits the camera to 512×512 px | ✅ done |
+| 4.2b | `TileMapManager` from the map | Consume the **terrain sidecar from 4.1b**, not the visual layers — no gid reverse-mapping in the client. Validate at the import boundary | ⬜ blocked on 4.1b |
+| 4.3 | Wire layers to systems | Terrain → costs; collision layer → walkable; fog layer → visibility tracking | ⬜ blocked on 4.1b |
+
+**Full spec:** see [`phase_4.md`](./phase_4.md). **Current state:** see [`progress.md`](./progress.md).
 
 ---
 
@@ -146,20 +153,26 @@ Each phase has a canonical spec in its own file. This document gives the goal, t
   const tx = Math.floor(worldPoint.x / TILE_SIZE);
   const ty = Math.floor(worldPoint.y / TILE_SIZE);
   ```
-- **Camera bounds:** `this.cameras.main.setBounds(0, 0, GRID_SIZE * TILE_SIZE, GRID_SIZE * TILE_SIZE)` → 1024×1024 world. Set zoom to fit **or** allow drag-pan, not both.
+- **Camera bounds:** `this.cameras.main.setBounds(0, 0, map.widthInPixels, map.heightInPixels)` → 512×512 world for a 32×32 board at 16 px. Set integer zoom to fit **or** allow drag-pan, not both.
 - **Graphics:** `this.add.graphics().fillStyle(0x00ff00).fillRect(x, y, TILE_SIZE, TILE_SIZE)`
 - **Scene management:** only top-level scenes use `this.scene.start()`; phases stay inside `BattleScene`
+- **Tileset name ≠ image name:** the generator writes the tileset's `name` as the *map* name (`level_01`), while `image` holds the PNG filename. Always read the name back out of the parsed map:
+  ```ts
+  const tilesetName = map.tilesets[0].name;      // 'level_01'
+  map.addTilesetImage(tilesetName, 'kenney-tinybattle'); // (name, textureKey)
+  ```
 
 ---
 
 ## Verification Steps
 
-1. **Build:** `npm run dev` shows a 32×32 board with colored tiles and one unit rect
-2. **Pathfinding:** click unit → reachable tiles highlighted (water unreachable, forest costs 2)
-3. **Movement:** click reachable tile → unit animates along path over ~200 ms
-4. **Turn flow:** setup → move → attack → end_turn cycles without crashing
-5. **Fog of war:** units outside LOS are not visible or selectable; explored terrain remains remembered after leaving LOS
-6. **Tests:** `npm test` passes all Pathfinding tests (see `phase_1.md`)
+1. **Map generation:** `npm run map:generate` exits 0 and prints `Verified: 32x32 @ 16px`; running it twice with the same `--seed` produces byte-identical JSON
+2. **Build:** `npm run dev` renders the 512×512 board with grass, forest, water, and mountain tiles — no magenta textures, no holes in the ground layer
+3. **Pathfinding:** click unit → reachable tiles highlighted (water unreachable, forest costs 2, mountain costs 3)
+4. **Movement:** click reachable tile → unit animates along path over ~200 ms
+5. **Turn flow:** setup → move → attack → end_turn cycles without crashing
+6. **Fog of war:** units outside LOS are not visible or selectable; explored terrain remains remembered after leaving LOS
+7. **Tests:** `npm test` passes all Pathfinding tests (see `phase_1.md`)
 
 ---
 
@@ -167,11 +180,12 @@ Each phase has a canonical spec in its own file. This document gives the goal, t
 
 | Decision | Rationale |
 |----------|-----------|
-| Hardcoded map first, Tiled in Phase 4 | Tooling work before fun is a trap |
+| Generated map, not hand-authored Tiled | Removes the manual authoring step; the Kenney sheet is already 16 px so no re-tiling is needed. Phase 4 documents the pipeline |
+| Object-mode generation (inline element layers) | Composite mode needs `key` tile properties on the tileset, which the Kenney sheet does not have |
 | Dijkstra over BFS | BFS ignores terrain costs |
 | Single-scene FSM | Avoids scene-transition resets and state-shuttle code |
 | 4-directional for MVP | 8-way + corner rules is a Phase 5+ concern |
-| 32 px × 32 tiles = 1024 px world | Standard strategy size; world bounds = `GRID_SIZE * TILE_SIZE` |
+| 16 px × 32 tiles = 512 px world | Dictated by the tileset; world bounds = `map.widthInPixels` |
 
 ---
 
@@ -189,8 +203,8 @@ Each phase has a canonical spec in its own file. This document gives the goal, t
 - ✅ **Gate checks must compile the actual method calls**, not just `import Phaser from 'phaser'`. A passing `tsc` on a file that only renders a rectangle doesn't prove `setCollision` exists — it proves the import resolves. The verification file must call all three APIs (`load.tilemapTiledJSON`, `getTileAt`, `setCollision`) against declared types so tsc failing = API missing, and tsc catching an unrelated error (e.g. unused var) confirms real type checking is happening rather than just resolving the import.
 - ✅ **Dijkstra, not BFS.** Terrain costs break BFS.
 - ✅ **Single scene with FSM.** No `MovePhaseScene`, `AttackPhaseScene`, etc.
-- ✅ **Hardcode the map first.** Tiled is a Phase 4 concern.
-- ✅ **World coordinates for input.** Use `cameras.main.getWorldPoint`, not `pointer.x / 32`.
+- ✅ **Generated map, not a hand-authored one.** The pipeline is `npm run map:generate`; see `phase_4.md`. Do not hand-edit `public/assets/maps/level_01.json` — it is overwritten on every run.
+- ✅ **World coordinates for input.** Use `cameras.main.getWorldPoint`, not `pointer.x / TILE_SIZE`-by-hand arithmetic on screen coords.
 
 ---
 
@@ -199,7 +213,7 @@ Each phase has a canonical spec in its own file. This document gives the goal, t
 ```
 src/
 ├── core/
-│   ├── TileMapManager.ts       # Hardcoded grid (Phase 1) → Phaser Tilemap API (Phase 4)
+│   ├── TileMapManager.ts       # Generated map → TerrainType[][] (phase 4.2b, not written)
 │   ├── UnitManager.ts
 │   ├── Pathfinding.ts          # Dijkstra + tileKey + reconstructPath
 │   ├── Pathfinding.test.ts     # Vitest — see phase_1.md
@@ -231,8 +245,22 @@ public/assets/                  # Served at /assets/... by Vite
 ├── tilesets/                   # Phase 4+
 ├── units/                      # Phase 4+
 ├── maps/
-│   └── level_01.json           # Phase 4+
+│   └── level_01.json           # generated — do not hand-edit
 └── audio/
+```
+
+The generator side (Node-only, never bundled):
+
+```
+scripts/
+├── generate-map.cjs            # npm run map:generate
+└── lib/
+    ├── prng.cjs                # seeded Math.random replacement
+    ├── tile-grid.cjs           # ASCII art → Tiled layer objects
+    └── map-elements.cjs        # forest / water / mountain element layers
+
+assets/generator/
+└── palette.json                # verified gid ↔ terrain table
 ```
 
 ---
@@ -241,6 +269,10 @@ public/assets/                  # Served at /assets/... by Vite
 
 | Issue | Prior | This version |
 |-------|-------|--------------|
+| Tile size | 32×32 px (no tileset of that size existed) | 16×16 px, matching `kenney_tinybattle.tsx` |
+| World size | 1024×1024 px | 512×512 px (32 tiles × 16 px) |
+| Map source | Hand-authored Tiled project | Generated by `@reldens/tile-map-generator`, seeded |
+| Phase 4 reference | `phase_4.md` did not exist | Written |
 | Architecture diagram | Mixed scene-per-phase with single-scene FSM | Only top-level scenes; FSM inside `BattleScene` |
 | Phase 1 scope | Diagram implied all scenes exist on day 1 | Phase 1 uses `BattleScene` only; other scenes are Phase 2+ |
 | Input API | Mixed `pointer.x / 32` and `camera.getWorldPoint()` | Unified to `cameras.main.getWorldPoint(pointer.x, pointer.y)` |

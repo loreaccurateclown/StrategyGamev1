@@ -1,0 +1,56 @@
+{
+  "$comment": [
+    "Verified palette for assets/import/kenney_tiny-battle/Tilemap/tilemap.png.",
+    "Every gid below was confirmed against real pixel data with `node tools/tile-rgb.cjs 0 197`",
+    "(exact RGB histogram + opacity per tile), not by eye.",
+    "",
+    "Rules used to accept a tile:",
+    "  - ground/terrain tiles must be 100% opaque, otherwise the layer below shows through",
+    "  - the tile must be dominated by that terrain's signature colour",
+    "  - tiles are 1-based gids (firstgid = 1), i.e. gid = tile index + 1",
+    "",
+    "Signature colours:",
+    "  grass    rgb(132,198,105)",
+    "  water    rgb(117,227,255)",
+    "  mountain rgb(82,96,124) + rgb(139,155,180) + rgb(192,203,220)",
+    "  forest   rgb(63,38,49) trunk/outline + rgb(132,198,105)/rgb(170,227,147) canopy",
+    "",
+    "There is no road tile in this tileset: the only gold rgb(253,190,83) pixels sit",
+    "in gid 3 at 13% coverage (a small decoration on grass), so TerrainType.Road has",
+    "no palette entry yet."
+  ],
+  "tileset": {
+    "name": "kenney_tinybattle",
+    "image": "kenney_tinybattle.png",
+    "source": "assets/import/kenney_tiny-battle/Tilemap/tilemap.png",
+    "tileSize": 16,
+    "spacing": 1,
+    "margin": 0,
+    "columns": 18,
+    "tileCount": 198,
+    "imageWidth": 305,
+    "imageHeight": 186
+  },
+  "terrain": {
+    "grass": {
+      "primary": 1,
+      "variants": [1, 2, 3],
+      "note": "gid 1 is flat rgb(132,198,105) at 100%; 2 and 3 add texture and a small decoration."
+    },
+    "water": {
+      "primary": 38,
+      "variants": [38, 93, 94],
+      "note": "gid 38 is 93% rgb(117,227,255); 93 and 94 match at 93%."
+    },
+    "mountain": {
+      "primary": 111,
+      "variants": [111, 129, 131, 145, 146, 147, 148, 165, 167],
+      "note": "gid 111 is the densest stone tile: 67% slate + 19% light + 14% mid, fully opaque."
+    },
+    "forest": {
+      "primary": 28,
+      "variants": [27, 28, 29, 30, 31],
+      "note": "gid 28 is 94% opaque with 41% trunk/bark + 43% canopy, so it reads as a full tree."
+    }
+  }
+}

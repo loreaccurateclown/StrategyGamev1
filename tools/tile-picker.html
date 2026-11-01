@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Kenney tile picker</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 12px;
+        background: #16181d;
+        color: #d7dae0;
+        font: 12px/1.3 ui-monospace, Consolas, monospace;
+      }
+      h1 {
+        font-size: 12px;
+        font-weight: 600;
+        margin: 0 0 10px;
+        color: #8b929e;
+      }
+      #grid {
+        display: grid;
+        grid-template-columns: repeat(8, 110px);
+        gap: 6px;
+      }
+      .cell {
+        background: #0b0c0f;
+        border: 1px solid #2a2e36;
+        padding: 3px;
+        text-align: center;
+      }
+      .cell canvas {
+        width: 96px;
+        height: 96px;
+        image-rendering: pixelated;
+        display: block;
+        margin: 0 auto;
+      }
+      .cell b {
+        display: block;
+        color: #ffd34d;
+        font-size: 14px;
+        margin-top: 2px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1 id="title"></h1>
+    <div id="grid"></div>
+    <script>
+      const TILE = 16;
+      const SPACING = 1;
+      const COLUMNS = 18;
+      const ZOOM = 6;
+
+      const params = new URLSearchParams(location.search);
+      const gids = (params.get("gids") ?? "1,2,3,38")
+        .split(",")
+        .map((v) => Number(v.trim()))
+        .filter((v) => Number.isInteger(v) && v > 0);
+
+      document.getElementById("title").textContent =
+        "gids: " + gids.join(", ") + "  (canvas shows index = gid - 1)";
+
+      const img = new Image();
+      img.src = "../assets/import/kenney_tiny-battle/Tilemap/tilemap.png";
+
+      img.onload = () => {
+        const grid = document.getElementById("grid");
+        for (const gid of gids) {
+          const index = gid - 1;
+          const col = index % COLUMNS;
+          const row = Math.floor(index / COLUMNS);
+          const canvas = document.createElement("canvas");
+          canvas.width = TILE * ZOOM;
+          canvas.height = TILE * ZOOM;
+          const ctx = canvas.getContext("2d");
+          ctx.imageSmoothingEnabled = false;
+          ctx.drawImage(
+            img,
+            col * (TILE + SPACING),
+            row * (TILE + SPACING),
+            TILE,
+            TILE,
+            0,
+            0,
+            TILE * ZOOM,
+            TILE * ZOOM
+          );
+          const cell = document.createElement("div");
+          cell.className = "cell";
+          cell.appendChild(canvas);
+          const b = document.createElement("b");
+          b.textContent = "gid " + gid;
+          cell.appendChild(b);
+          grid.appendChild(cell);
+        }
+      };
+    </script>
+  </body>
+</html>

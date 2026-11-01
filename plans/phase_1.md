@@ -1,15 +1,19 @@
 # Phase 1: Core Loop Vertical Slice (Days 1–2)
 
-**Goal:** A single runnable `BattleScene` where you can **click a unit → see reachable tiles → click a tile → it moves**, on a 32×32 grid with terrain costs. No Tiled, no sprites, no fog, no attack, no AI, no scene-per-phase. Only `BattleScene` is implemented (starting directly via `main.ts`).
+> **Verified 2026-10-31 against Phaser 4.2.1:** `Scene.load.tilemapTiledJSON`, `Tilemap.getTileAt`, and `TilemapLayer.setCollision` are present in the pinned package's TypeScript declarations.
+
+**Goal:** A single runnable `BattleScene` where you can **click a unit → see reachable tiles → click a tile → it moves**, on a **32×32 tile board of 16×16 px tiles** (512×512 px world) with terrain costs. No fog, no attack, no AI, no scene-per-phase. Only `BattleScene` is implemented (started directly via `main.ts`).
+
+> **Note (2026-10-31):** the tile size is **16×16 px**, not 32×32 px. It is dictated by the only tileset in the repo. The *board* is still 32×32 tiles. The hardcoded map in step 1.3 has been superseded by the generated map from `phase_4.md`, so step 1.3 is now "load the generated map" rather than "invent a grid".
 
 > **Canonical spec for Phase 1.** This file is self-contained — the Pathfinding interface and all contracts referenced below are defined in this document. Other phase files follow the same pattern.
 >
-> **Phase A — Environment & Dependencies.** Gate passed on **second attempt** — first grep hit `setCollidesWith` (Arcade Physics, wrong class); corrected to `setCollision` on `TilemapLayer`, then verified via grep + compile. Phaser 4.2.1 pinned exact (`phaser@4.2.1 --save-exact`).
-> - `LoaderPlugin.tilemapTiledJSON("key", "map.json")` — asset loader API (Phase 1/4).
+> **Phase A — Environment & Dependencies.** Phaser 4.2.1 is pinned exact (`phaser@4.2.1 --save-exact`). The API gate calls the following methods on their declared owners:
+> - `Scene.load.tilemapTiledJSON("key", "map.json")` — asset loader API (Phase 1/4).
 > - `Tilemap.getTileAt(x, y)` → `Phaser.Tilemaps.Tile | null` — tile lookup.
-> - **`TilemapLayer.setCollision(indexes, collides?, recalculateFaces?, updateLayer?)`** — the gate. Marks tile indices as blocking for movement/pathfinding so water is impassable and forest costs 2. Confirmed at line ~142756 of `phaser.d.ts`.
-> - **Verification method (substantive, not decorative):** wrote a file that calls all three APIs against declared `Phaser.Tilemaps.Tilemap` / `Phaser.Tilemaps.TilemapLayer` types and ran `tsc --noEmit`. It compiled cleanly — proving the methods exist on those classes. As a control, tsc correctly flagged the unused `_tile` variable (which held the `getTileAt` return value), confirming real type checking was running rather than just resolving the import.
-> - **Note:** `setCollidesWith` (Arcade Physics, different class) was initially considered by mistake; the correct tile-collision API is `setCollision` on `TilemapLayer`.
+> - `TilemapLayer.setCollision(indexes, collides?, recalculateFaces?, updateLayer?)` — sets Phaser tile collision flags. The custom pathfinder must separately enforce terrain passability and movement costs.
+> - **Verification method:** `src/_gate_check.ts` calls all three APIs against the declared scene, tilemap, and tilemap-layer types; `tsc --noEmit` verifies those calls compile.
+> - **Note:** `setCollidesWith` belongs to Arcade Physics and is not the tilemap API. `setCollision` is a method on `TilemapLayer`, not `Phaser.Tilemaps`.
 
 ---
 
@@ -17,14 +21,14 @@
 
 | Step | Task | Details |
 |------|------|---------|
-| 1.0 | **Verify Phaser API and pin version** | `npm view phaser versions \| tail`, read the 4.x release notes for tilemap/input changes; confirm `load.tilemapTiledJSON`, `tilemap.getTileAt`, and `setCollision` exist in 4.x. **Pin `phaser` to one exact version in `package.json` (no `^`, no `~`). Then add a one-line note at the top of **`phase_1.md`** naming that version and today's date as the verification date.** Do not proceed until this is decided. |
-| 1.1 | Verify Phaser setup + TypeScript | `npm create vite@latest -- --template vanilla-ts`, install pinned Phaser, confirm `import Phaser from 'phaser'` works |
-| 1.2 | Define core types first | `GridPos`, `TerrainType`, `UnitType`, `TerrainDef` (moveCost, passable, blocksLOS), `ReachableTile` — all in `src/types/game.types.ts`. Define before writing game logic |
-| 1.3 | Scaffold with hardcoded map | A 32×32 `number[][]` rendered as colored `Phaser.GameObjects.Rectangle`s or one `Graphics` object. Terrain indices: **1 = grass (green)**, **2 = forest (dark green, cost 2)**, **3 = water (blue, impassable)** — this is what the Definition of Done checks |
-| 1.3b | **Clarify terrain-cost rule** | Any tile index other than `1` or `2` is treated as impassable (`cost = Infinity`). This covers index `0` and any future indices: only grass (1) and forest (2) are walkable, everything else blocks movement. See the cost function in the Pathfinding interface below. |
+| 1.0 | ✅ **Completed — verify Phaser API and pin version** | Phaser 4.2.1 is pinned exactly in `package.json`. Verified `Scene.load.tilemapTiledJSON`, `Tilemap.getTileAt`, and `TilemapLayer.setCollision` against the installed types on 2026-10-31; the verification note is at the top of this file. |
+| 1.1 | ✅ **Completed — verify Phaser setup + TypeScript** | Vite, TypeScript, and Phaser are configured. `src/main.ts` boots a minimal Phaser scene; `npm run build` and the browser startup were verified. Do not rerun project scaffolding. |
+| 1.2 | ✅ **Completed — define core types** | `GridPos`, `TerrainType`, `UnitType`, `TerrainDef` (moveCost, passable, blocksLOS), `ReachableTile`, and `TERRAIN_DEFS` live in `src/types/game.types.ts`. `TerrainType` is now `Grass = 1, Forest = 2, Water = 3, Mountain = 4, Road = 5`. `Road` has a `TERRAIN_DEFS` entry but no palette entry (the tileset has no road tile), so no map emits it yet. |
+| 1.3 | ✅ **Completed — map source** | ~~Hardcoded 32×32 `number[][]`~~ Superseded: the board is generated (see [`phase_4.md`](./phase_4.md)) and rendered by `src/scenes/BattleScene.ts` at 16 px per tile. Tile ids in the JSON are **gids** (1-based), mapped to `TerrainType` through `assets/generator/palette.json`. Reading that JSON into `TerrainType[][]` is step 4.2b, not done yet. |
+| 1.3b | **Use the terrain definitions for movement rules** | `TERRAIN_DEFS` is the source of truth. A known terrain is traversable only when `passable` is true; use its `moveCost` as the enter-cost. Impassable terrain and unknown tile indices resolve to `Infinity` at the pathfinding boundary. Never pass a negative movement cost to Dijkstra. |
 | 1.4 | Implement **Dijkstra** pathfinding | `getReachableTiles` with per-tile move costs; store `cost` (**enter-cost convention: start tile = 0**) and `parent` per tile to reconstruct paths. Export `tileKey(pos)` and `reconstructPath(reachable, target): GridPos[]`. See the Pathfinding interface below |
 | 1.4b | **Keep `Pathfinding.ts` Phaser-free** | Plain TypeScript only: `GridPos = { x, y }`, no imports beyond the type file (no `import Phaser from 'phaser'`). This is required so `Pathfinding.test.ts` can import it under vitest's default Node environment — Node has no canvas |
-| 1.4c | **Add Vitest and write `Pathfinding.test.ts`** | `npm i -D vitest`; add `"test": "vitest run"` to `package.json` scripts; create the file exactly as specified in the Tests section below. No `vitest.config.ts` is needed — the Vite template plus the Phaser-free `Pathfinding.ts` runs under vitest's default Node environment, so do not add a jsdom config |
+| 1.4c | **Write `Pathfinding.test.ts`** | Vitest and the `"test": "vitest run"` script are already configured. Create the file as specified in the Tests section below. No `vitest.config.ts` is needed — the Phaser-free `Pathfinding.ts` runs under Vitest's default Node environment, so do not add a jsdom config or reinstall Vitest |
 | 1.5 | Wire the core loop | `this.cameras.main.getWorldPoint(pointer.x, pointer.y)` → tile coords → Dijkstra → tint reachable → second click animates unit along path over ~200 ms |
 
 ---
@@ -46,6 +50,18 @@ export interface ReachableTile {
 }
 ```
 
+`UnitType` is a union of unit-name string literals, starting as `type UnitType = "infantry"` and extended as unit kinds are implemented (for example, `"infantry" | "tank"`). It describes a unit's kind, not the full unit object.
+
+`TERRAIN_DEFS` is the single source of truth for `TerrainType` movement costs and passability. Current values:
+
+| Terrain | `moveCost` | `passable` | `blocksLOS` |
+|---------|-----------|------------|-------------|
+| Grass | 1 | ✅ | ❌ |
+| Forest | 2 | ✅ | ❌ |
+| Water | `Infinity` | ❌ | ✅ |
+| Mountain | 3 | ✅ | ✅ |
+| Road | 1 | ✅ | ❌ |
+
 ### `tileKey(pos): string`
 
 Hashes a position into a map key. Contract: `` `"${x},${y}"` `` — no spaces, comma-separated.
@@ -54,10 +70,9 @@ Hashes a position into a map key. Contract: `` `"${x},${y}"` `` — no spaces, c
 
 Runs Dijkstra from `start` and returns every tile reachable within `maxMovementPoints`, keyed by `tileKey`.
 
-- **grid** — the 32×32 terrain grid (`number[][]`).
-- **start** — `GridPos` of the unit's current tile.
+- **grid** — the 32×32 terrain grid (`number[][]`).- **start** — `GridPos` of the unit's current tile.
 - **maxMovementPoints** — total movement points available this turn (e.g. 6). `Infinity` means no limit (used by tests).
-- **getTerrainCost(tileIndex: number) → number** — given a tile index from the grid (e.g., `1` for grass, `2` for forest), returns the enter-cost for that tile type: `1 → 1`, `2 → 2`, everything else → `Infinity`. The pathfinder passes `grid[pos.y][pos.x]`, not `pos` itself.
+- **getTerrainCost(tileIndex: number) → number** — given a numeric tile index from the grid, look up its definition in `TERRAIN_DEFS`. Return its `moveCost` only when the definition is passable and the cost is finite and nonnegative; otherwise return `Infinity`. Unknown indices also return `Infinity`. The pathfinder passes `grid[pos.y][pos.x]`, not `pos` itself. This keeps terrain values centralized and ensures invalid costs are never used by Dijkstra.
 - **isOccupied(pos) → boolean** — true if another unit currently occupies the tile. The pathfinder must **not** call `isOccupied(start)` — the moving unit occupies its own tile and must not block itself. All other tiles are checked.
 
 The returned map **includes the start tile** with `cost: 0` and `parent: null`. All other entries have `cost > 0`. Callers may rely on `reachable.get(tileKey(start))` being defined.
@@ -76,11 +91,14 @@ The cost stored on each tile is the cost to **enter** it (not leave it). A path'
 
 ```ts
 import { describe, it, expect } from "vitest";
+import { TERRAIN_DEFS, TerrainType } from "../types/game.types";
 import type { GridPos } from "../types/game.types";
 import { getReachableTiles, reconstructPath, tileKey } from "./Pathfinding";
 
-const terrainCost = (tile: number): number =>
-  tile === 1 ? 1 : tile === 2 ? 2 : Infinity;
+const terrainCost = (tileIndex: number): number => {
+  const terrain = TERRAIN_DEFS[tileIndex as TerrainType];
+  return terrain?.passable ? terrain.moveCost : Infinity;
+};
 
 const neverOccupied = (_pos: GridPos): boolean => false;
 
@@ -90,9 +108,9 @@ const neverOccupied = (_pos: GridPos): boolean => false;
 //   (0,2) grass  (1,2) grass  (2,2) grass
 //
 const GRID: number[][] = [
-  [1, 1, 2],
-  [1, 3, 1],
-  [1, 1, 1],
+  [TerrainType.Grass, TerrainType.Grass, TerrainType.Forest],
+  [TerrainType.Grass, TerrainType.Water, TerrainType.Grass],
+  [TerrainType.Grass, TerrainType.Grass, TerrainType.Grass],
 ];
 
 const START: GridPos = { x: 0, y: 0 };
@@ -122,8 +140,8 @@ describe("getReachableTiles", () => {
     // A correct Dijkstra returns 6. Pure BFS (and a uniform-weight
     // Dijkstra, which is BFS in disguise) returns 4 — the step count.
     const trapGrid: number[][] = [
-      [1, 2, 2, 2, 1],
-      [1, 1, 1, 1, 1],
+      [TerrainType.Grass, TerrainType.Forest, TerrainType.Forest, TerrainType.Forest, TerrainType.Grass],
+      [TerrainType.Grass, TerrainType.Grass, TerrainType.Grass, TerrainType.Grass, TerrainType.Grass],
     ];
     const reachable = getReachableTiles(
       trapGrid, { x: 0, y: 0 }, Infinity, terrainCost, neverOccupied
@@ -193,23 +211,33 @@ describe("reconstructPath", () => {
 ---
 
 ## Definition of Done
-- `npm run dev` shows a 32×32 board with 3 terrain types (grass / forest / water)
-- One unit rect on grass. Click → reachable tiles highlighted (water unreachable, forest costs 2)
+- `npm run dev` shows a **32×32 tile board at 16 px = 512×512 px** with 4 terrain types (grass / forest / water / mountain)
+- One unit marker on grass. Click → reachable tiles highlighted (water unreachable, forest costs 2, mountain costs 3)
 - Click a reachable tile → unit animates along path over ~200 ms
 - `npm test` passes all Pathfinding tests
+
+**Done so far:** first bullet (board renders, all 4 terrains present, verified). Remaining: unit marker, reachable highlighting, movement, and the `Pathfinding.ts` / test file, which do not exist yet.
 
 ---
 
 ## Key files created in Phase 1
-- `src/types/game.types.ts` — core interfaces (`GridPos`, `ReachableTile`, etc.)
-- `src/core/Pathfinding.ts` — Dijkstra implementation with terrain costs, returns reachable set + parent pointers for path reconstruction; defines `tileKey(pos)` and exports `reconstructPath(reachable, target): GridPos[]`
-- `src/core/TileMapManager.ts` — wraps a hardcoded 32×32 grid (no Tiled yet), exposes `getTileAt(x,y)`, `setTileAt(x,y,index)`, `isWalkable(x,y)`
-- `src/scenes/BattleScene.ts` — single scene with the internal FSM (Phase 1: `setup → move`; `attack → end_turn → enemy_turn` added in Phase 2–3), input handling, and camera setup
+- `src/types/game.types.ts` — core interfaces (`GridPos`, `ReachableTile`, etc.) and `TERRAIN_DEFS`
+- `src/core/Pathfinding.ts` — **not written yet.** Dijkstra with terrain costs, `tileKey(pos)`, `reconstructPath(reachable, target): GridPos[]`
+- `src/core/TileMapManager.ts` — **not written yet.** Will read the generated map into `TerrainType[][]` (step 4.2b)
+- `src/scenes/BattleScene.ts` — ✅ exists: loads the generated map, renders every non-collision layer, fits the camera. The FSM, input handling, and unit logic are still to come
+- `src/_gate_check.ts` — ✅ compile-time API gate for both the loading API and the render API
 
 ---
 
 ## Notes on scope & dependencies
 - **FSM states:** Phase 1 implements `setup → move` only. `attack`, `end_turn`, and `enemy_turn` arrive in Phase 2–3. The full FSM in `plan.md`'s architecture diagram is the *final* shape, not the Phase 1 shape.
-- **1.0 is a hard gate** — do not proceed until Phaser's version/API is confirmed.
+- **1.0 is a hard gate** — passed for Phaser 4.2.1 on 2026-10-31; do not change the pinned version or rely on unverified APIs without repeating the gate.
 - **1.2 must precede 1.3 through 1.5 (including all sub-steps)** — types are defined first so the Dijkstra code and rendering compile against stable contracts rather than being rewritten mid-phase.
 - **1.4 (Dijkstra) feeds 1.5 (core loop)** — pathfinding is implemented before it's wired into input handling, with `Pathfinding.test.ts` driving the implementation in parallel via step 1.4c.
+- **Tile size is 16 px, board is 32×32 tiles.** Do not reintroduce 32 px arithmetic; `TILE_SIZE` comes from `map.tileWidth`, and world size from `map.widthInPixels`.
+
+---
+
+## Current state (2026-10-31)
+
+See [`progress.md`](./progress.md) for the handoff summary. In short: Phaser setup, types, the seeded map generator, and map rendering are done and verified; pathfinding, units, and the FSM are not started.
