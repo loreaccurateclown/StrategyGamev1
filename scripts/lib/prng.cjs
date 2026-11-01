@@ -1,9 +1,9 @@
 /**
  * Deterministic PRNG.
  *
- * @reldens/tile-map-generator calls bare Math.random() throughout and exposes no
- * seed option, so the only way to get reproducible maps is to swap the global
- * implementation before the generator runs.
+ * The map composer (scripts/lib/compose-map.cjs) drives every random decision
+ * through Math.random, so swapping the global implementation with a seeded one
+ * before composing is what makes `--seed` produce reproducible maps.
  */
 
 /** mulberry32 — small, fast, good enough distribution for map layout. */

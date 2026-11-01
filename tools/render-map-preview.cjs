@@ -193,7 +193,11 @@ for (const layer of map.layers) {
   for (let i = 0; i < layer.data.length; i++) {
     const gid = layer.data[i];
     if (gid === 0) continue;
-    const tileIndex = gid - firstgid;
+    // Tiled flip flags live in the top 3 bits; mask them off to get the tile,
+    // then honour them when blitting so mirrored coast corners render right.
+    const flipH = (gid & 0x80000000) !== 0;
+    const flipV = (gid & 0x40000000) !== 0;
+    const tileIndex = (gid & 0x1fffffff) - firstgid;
     if (tileIndex < 0) throw new Error(`gid ${gid} < firstgid ${firstgid} in "${layer.name}"`);
     const sx = margin + (tileIndex % columns) * (tileW + spacing);
     const sy = margin + Math.floor(tileIndex / columns) * (tileH + spacing);
@@ -201,7 +205,9 @@ for (const layer of map.layers) {
     const dy = Math.floor(i / boardW) * tileH;
     for (let y = 0; y < tileH; y++) {
       for (let x = 0; x < tileW; x++) {
-        const s = ((sy + y) * sheet.width + (sx + x)) * 4;
+        const fx = flipH ? tileW - 1 - x : x;
+        const fy = flipV ? tileH - 1 - y : y;
+        const s = ((sy + fy) * sheet.width + (sx + fx)) * 4;
         const a = sheet.pixels[s + 3];
         if (a === 0) continue;
         const d = ((dy + y) * outW + (dx + x)) * 4;
