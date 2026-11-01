@@ -24,7 +24,8 @@ build
 .playwright-mcp/
 .dsh-code-index/
 
-# Dev-only generated reports and render screenshots under tools/
-# (the .cjs and .html palette tools are kept)
-tools/*.png
-tools/*.txt
+# Dev-only generated reports, render screenshots and reference rips under tools/
+# (the .cjs and .html palette tools are kept; tools/awmaps holds copyrighted
+# Advance Wars map rips used only as a local style reference)
+tools/**/*.png
+tools/**/*.txt
