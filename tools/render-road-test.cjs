@@ -1,10 +1,15 @@
 /**
- * Renders three horizontal-bridge treatments over a water strait so the user
- * can pick the one that reads best as a bridge.
+ * Renders candidate bridge stacks over a water strait so the user can pick the
+ * deck/underside pairing:
  *
- *   A = gid 131 (plain bridge)
- *   B = gid 149 (deck underside with struts)
- *   C = gid 149 deck + gid 74 (water with pillar reflections) directly beneath
+ *   A = 131 (deck) over 149 (struts)
+ *   B = 131 (deck) over 74  (poles)
+ *   C = 131 over 149, with 40 north of the deck (the "40 north" idea)
+ *
+ * Layout: 21x9 panel, grass sides, vertical strait in the middle (cols 8-12),
+ * horizontal road at row 4 crossing it. Deck sits at row 4; the underside
+ * occupies row 5 (the water directly below the elevated deck); water fill
+ * everywhere else in the strait.
  *
  * Output: tools/tiles/bridge-compare.png
  */
@@ -91,14 +96,12 @@ function encodePng(width, height, rgba) {
 }
 
 const sheet = decodePng(fs.readFileSync(SHEET));
-function blit(gid, flipH, flipV, img, dx, dy, w) {
+function blit(gid, img, dx, dy, w) {
   const idx = gid - 1;
   const sx = (idx % COLUMNS) * (TILE + SPACING);
   const sy = Math.floor(idx / COLUMNS) * (TILE + SPACING);
   for (let y = 0; y < TILE; y++) for (let x = 0; x < TILE; x++) {
-    const fx = flipH ? TILE - 1 - x : x;
-    const fy = flipV ? TILE - 1 - y : y;
-    const s = ((sy + fy) * sheet.width + (sx + fx)) * 4;
+    const s = ((sy + y) * sheet.width + (sx + x)) * 4;
     const a = sheet.pixels[s + 3];
     if (a === 0) continue;
     const d = ((dy + y) * w + (dx + x)) * 4;
@@ -106,36 +109,45 @@ function blit(gid, flipH, flipV, img, dx, dy, w) {
   }
 }
 
-// 21 x 7 panel: grass sides, water strait in middle, road crossing at row 3.
-function bridgePanel(bridgeGid, reflection) {
-  const COLS = 21, ROWS = 7;
+const DECK = 131;
+const ROAD = 111;
+const WATER = 38;
+
+function panel(undersideGid, northGid) {
+  const COLS = 21, ROWS = 9;
   const w = COLS * TILE, h = ROWS * TILE;
   const img = Buffer.alloc(w * h * 4);
   for (let i = 0; i < img.length; i += 4) { img[i] = 0x1d; img[i + 1] = 0x1d; img[i + 2] = 0x1d; img[i + 3] = 0xff; }
   for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) {
     let gid = 1; // grass
-    if (x >= 8 && x <= 12) gid = 38; // water strait
-    if (y === 3) gid = 111; // horizontal road
-    // bridge over water
-    if (y === 3 && x >= 8 && x <= 12) gid = bridgeGid;
-    // reflection water beneath the deck
-    if (reflection && y === 4 && x >= 8 && x <= 12) gid = 74;
-    blit(gid, false, false, img, x * TILE, y * TILE, w);
+    const inStrait = x >= 8 && x <= 12;
+    if (inStrait) gid = WATER;
+    if (y === 4) gid = ROAD; // horizontal road
+    if (y === 4 && inStrait) gid = DECK; // deck over water
+    if (y === 5 && inStrait) gid = undersideGid; // underside in the water below
+    if (northGid && y === 3 && inStrait) gid = northGid;
+    blit(gid, img, x * TILE, y * TILE, w);
   }
   return { w, h, img };
 }
 
-const A = bridgePanel(131, false);
-const B = bridgePanel(149, false);
-const C = bridgePanel(149, true);
+const configs = [
+  { underside: 149, north: 0, label: "A: 131 over 149" },
+  { underside: 74, north: 0, label: "B: 131 over 74" },
+  { underside: 149, north: 40, label: "C: 131 over 149, 40 north" },
+];
+const panels = configs.map((c) => ({ ...c, ...panel(c.underside, c.north) }));
+
 const gap = 8;
-const totalW = A.w;
-const totalH = A.h * 3 + gap * 2;
+const totalW = panels[0].w;
+const totalH = panels.reduce((s, p) => s + p.h + gap, -gap);
 const out = Buffer.alloc(totalW * totalH * 4);
 for (let i = 0; i < out.length; i += 4) { out[i] = 0xff; out[i + 1] = 0xff; out[i + 2] = 0xff; out[i + 3] = 0xff; }
-A.img.copy(out, 0);
-B.img.copy(out, (A.h + gap) * totalW * 4);
-C.img.copy(out, (A.h + gap) * 2 * totalW * 4);
+let cursor = 0;
+for (const p of panels) {
+  p.img.copy(out, cursor * totalW * 4);
+  cursor += p.h + gap;
+}
 
 const uw = totalW * SCALE, uh = totalH * SCALE;
 const up = Buffer.alloc(uw * uh * 4);
@@ -147,6 +159,6 @@ for (let y = 0; y < uh; y++) {
     up[d] = out[s]; up[d + 1] = out[s + 1]; up[d + 2] = out[s + 2]; up[d + 3] = out[s + 3];
   }
 }
-const outPath = path.join(__dirname, "tiles", "bridge-compare.png");
+const outPath = path.join(__dirname, "tiles", "bridge-stacks.png");
 fs.writeFileSync(outPath, encodePng(uw, uh, up));
-console.log("wrote " + outPath + "  (top=A:131, middle=B:149, bottom=C:149+74 reflection)");
+console.log("wrote " + outPath + "  (top-to-bottom: " + panels.map((p) => p.label).join(", ") + ")");

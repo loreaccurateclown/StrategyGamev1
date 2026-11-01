@@ -28,11 +28,11 @@
   "terrain": {
     "grass": { "type": 1, "gids": [1, 2, 3] },
     "forest": { "type": 2, "edge": 95, "interior": 113, "gids": [95, 113] },
-    "water": { "type": 3, "fill": 38, "gids": [38, 19, 20, 37, 39, 56] },
+    "water": { "type": 3, "fill": 38, "gids": [38, 19, 20, 37, 39, 56, 149] },
     "mountain": { "type": 4, "gids": [6] },
     "road": {
       "type": 5,
-      "gids": [111, 127, 128, 129, 130, 131, 145, 146, 147, 148, 149, 163, 164, 165, 166, 167]
+      "gids": [111, 127, 128, 129, 130, 131, 145, 146, 147, 148, 163, 164, 165, 166, 167]
     }
   },
   "coast": {
@@ -44,7 +44,7 @@
     "vertical": 145,
     "bends": { "northEast": 164, "northWest": 166, "southEast": 128, "southWest": 130 },
     "junctions": { "north": 165, "south": 129, "east": 146, "west": 148, "cross": 147 },
-    "bridges": { "horizontal": 149, "vertical": 167, "plainHorizontal": 131, "waterReflection": 74 }
+    "bridges": { "horizontal": 131, "vertical": 167, "strutHorizontal": 149 }
   },
   "flipFlags": { "horizontal": 2147483648, "vertical": 1073741824, "diagonal": 536870912 },
   "gidMask": 536870911,

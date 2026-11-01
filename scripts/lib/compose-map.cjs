@@ -183,12 +183,13 @@ function compose(width, height) {
   for (let i = 0, count = irand(3, 6); i < count; i++) growClump(irand(2, 4), MOUNTAIN);
 
   // --- 5. roads -----------------------------------------------------------
-  const bridgeCells = new Uint8Array(n); // 1 horizontal bridge, 2 vertical bridge
+  const deckCells = new Uint8Array(n); // 1 horizontal deck, 2 vertical deck
+  const strutCells = new Uint8Array(n); // 1 = underside struts (149) in water
 
   function setRoad(x, y, orientation) {
     if (!inBounds(x, y)) return;
     const i = idx(x, y);
-    if (terrain[i] === WATER) bridgeCells[i] = orientation === "h" ? 1 : 2;
+    if (terrain[i] === WATER) deckCells[i] = orientation === "h" ? 1 : 2;
     terrain[i] = ROAD;
   }
 
@@ -204,6 +205,15 @@ function compose(width, height) {
   for (let y = 0; y <= stepY; y++) setRoad(roadX, y, "v");
   for (let x = Math.min(roadX, roadX2); x <= Math.max(roadX, roadX2); x++) setRoad(x, stepY, "h");
   for (let y = stepY + 1; y < height; y++) setRoad(roadX2, y, "v");
+
+  // Struts: the water cell directly SOUTH of each horizontal deck gets the
+  // underside (149), so the bridge reads as a deck over a supported span.
+  for (let i = 0; i < n; i++) {
+    if (deckCells[i] !== 1) continue;
+    const x = i % width;
+    const y = Math.floor(i / width);
+    if (inBounds(x, y + 1) && terrain[idx(x, y + 1)] === WATER) strutCells[idx(x, y + 1)] = 1;
+  }
 
   // --- 5b. normalise coverage up to the design target ---------------------
   // Band/strait/clump sizes vary per seed, so grow interior forest until the
@@ -242,6 +252,7 @@ function compose(width, height) {
   }
 
   function waterGid(i) {
+    if (strutCells[i]) return R.bridges.strutHorizontal;
     const x = i % width;
     const y = Math.floor(i / width);
     const N = isWater(x, y - 1);
@@ -265,8 +276,8 @@ function compose(width, height) {
   }
 
   function roadGid(i) {
-    if (bridgeCells[i] === 1) return R.bridges.horizontal;
-    if (bridgeCells[i] === 2) return R.bridges.vertical;
+    if (deckCells[i] === 1) return R.bridges.horizontal;
+    if (deckCells[i] === 2) return R.bridges.vertical;
     const x = i % width;
     const y = Math.floor(i / width);
     const N = inBounds(x, y - 1) && terrain[idx(x, y - 1)] === ROAD;
