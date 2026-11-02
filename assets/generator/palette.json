@@ -46,7 +46,7 @@
     "building": {
       "type": 6,
       "city": 9,
-      "cityVariants": [9, 10, 11],
+      "cityVariants": [9],
       "gids": [9, 10, 11]
     }
   },

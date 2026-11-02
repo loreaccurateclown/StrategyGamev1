@@ -225,22 +225,11 @@ function compose(width, height) {
   for (let i = 0, count = irand(8, 12); i < count; i++) growClump(irand(3, 8), FOREST);
   for (let i = 0, count = irand(3, 6); i < count; i++) growClump(irand(2, 4), MOUNTAIN);
 
-  // --- 4b. metropolitan areas: compact city blocks -------------------------
-  // Cities are properties (income/capture arrive later), so they are placed as
-  // tight blocks in the open interior rather than rambled by growClump: a 2x2
-  // block plus a few attached neighbours reads as a town, not a smear. Each
-  // block is surrounded by grass on all sides so terrain can later be aligned
-  // to it (woods/roads running up to the town edge).
-  function blockIsOpen(x, y, w, h) {
-    // require a 1-tile grass margin so towns never fuse with forest or water
-    for (let yy = y - 1; yy < y + h + 1; yy++) {
-      for (let xx = x - 1; xx < x + w + 1; xx++) {
-        if (xx < 3 || yy < 3 || xx >= width - 3 || yy >= height - 3) return false;
-        if (terrain[idx(xx, yy)] !== GRASS) return false;
-      }
-    }
-    return true;
-  }
+  // --- 4b. metropolitan areas: scattered city districts --------------------
+  // Cities are properties (income/capture arrive later). They are scattered in
+  // a compact cluster with at least one empty tile between buildings, so a
+  // district reads as a loose town rather than a solid block. Only gid 9 (the
+  // neutral generic city) is emitted for now.
 
   // Buildings are impassable, so a town could seal off a 1-tile pocket of grass.
   // Place the block, then prove the walkable area is still a single region; if
@@ -281,35 +270,56 @@ function compose(width, height) {
   }
 
   function placeCityBlock(maxCells) {
-    // Bias toward a 3x3 footprint: a 2x2 town reads as a stub, while up to 8
-    // cells of 3x3 reads as a district (the user's "metropolitan area").
-    const w = Math.random() < 0.7 ? 3 : 2;
-    const h = Math.random() < 0.7 ? 3 : 2;
-    for (let attempt = 0; attempt < 80; attempt++) {
-      const x = irand(4, width - w - 4);
-      const y = irand(4, height - h - 4);
-      if (!blockIsOpen(x, y, w, h)) continue;
-      // Fill in a shuffled order and stop at maxCells, so a 3x3 block with a
-      // cell budget of 6-8 produces an L-shaped town rather than a stamp.
-      const cells = [];
-      for (let yy = y; yy < y + h; yy++) {
-        for (let xx = x; xx < x + w; xx++) cells.push(idx(xx, yy));
+    for (let attempt = 0; attempt < 100; attempt++) {
+      const cx = irand(5, width - 6);
+      const cy = irand(5, height - 6);
+      if (terrain[idx(cx, cy)] !== GRASS) continue;
+
+      // Candidate cells within Chebyshev radius 3 of the centre, shuffled so the
+      // district fills in a natural-looking scattered order.
+      const cand = [];
+      for (let dy = -3; dy <= 3; dy++) {
+        for (let dx = -3; dx <= 3; dx++) {
+          const nx = cx + dx;
+          const ny = cy + dy;
+          if (nx < 4 || ny < 4 || nx >= width - 4 || ny >= height - 4) continue;
+          if (terrain[idx(nx, ny)] !== GRASS) continue;
+          cand.push(idx(nx, ny));
+        }
       }
-      for (let k = cells.length - 1; k > 0; k--) {
+      for (let k = cand.length - 1; k > 0; k--) {
         const j = Math.floor(Math.random() * (k + 1));
-        [cells[k], cells[j]] = [cells[j], cells[k]];
+        [cand[k], cand[j]] = [cand[j], cand[k]];
       }
-      const placedCells = [];
-      for (const cell of cells) {
-        if (placedCells.length >= maxCells) break;
+
+      const placed = [];
+      for (const cell of cand) {
+        if (placed.length >= maxCells) break;
+        const x = cell % width;
+        const y = Math.floor(cell / width);
+        // Spread rule: at least one empty tile between buildings (not 8-adjacent
+        // to anything already placed).
+        let tooClose = false;
+        for (const p of placed) {
+          const px = p % width;
+          const py = Math.floor(p / width);
+          if (Math.max(Math.abs(x - px), Math.abs(y - py)) <= 1) {
+            tooClose = true;
+            break;
+          }
+        }
+        if (tooClose) continue;
         terrain[cell] = BUILDING;
-        placedCells.push(cell);
+        placed.push(cell);
       }
+      if (placed.length === 0) continue;
+
+      // Buildings are impassable: revert if this district stranded any grass.
       if (strandedAnywhere()) {
-        for (const cell of placedCells) terrain[cell] = GRASS;
+        for (const cell of placed) terrain[cell] = GRASS;
         continue;
       }
-      return placedCells.length;
+      return placed.length;
     }
     return 0;
   }
@@ -474,11 +484,9 @@ function compose(width, height) {
         visual[i] = roadGid(i);
         break;
       case BUILDING: {
-        // Neutral gids only: 9 is the generic city (income); 10/11 are used
-        // sparingly for variety. Faction-coloured cities (+18n) are applied by
-        // map scripting on capture, never by generation.
-        const r = Math.random();
-        visual[i] = r < 0.7 ? B.city : pick(B.cityVariants);
+        // Neutral generic city (gid 9) only for now; variants and faction colours
+        // are applied by map scripting on capture.
+        visual[i] = B.city;
         collisions[i] = 1;
         break;
       }
