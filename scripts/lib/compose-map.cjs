@@ -474,8 +474,9 @@ function compose(width, height) {
         visual[i] = roadGid(i);
         break;
       case BUILDING: {
-        // 27 is the generic city (income); 28/29 are used only for variety so
-        // the town does not read as one stamp repeated.
+        // Neutral gids only: 9 is the generic city (income); 10/11 are used
+        // sparingly for variety. Faction-coloured cities (+18n) are applied by
+        // map scripting on capture, never by generation.
         const r = Math.random();
         visual[i] = r < 0.7 ? B.city : pick(B.cityVariants);
         collisions[i] = 1;

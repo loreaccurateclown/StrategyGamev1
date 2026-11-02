@@ -1,6 +1,6 @@
 {
   "$comment": [
-    "Corrected 2026-11-01 from plans/tile_roles.md (user-verified against labelled tile renders).",
+    "Corrected 2026-11-01/02 from plans/tile_roles.md (user-verified against labelled tile renders).",
     "The previous palette was wrong in three ways: it used 27-31 (cities/factory/dockyard)",
     "as forest, 111/129/... (roads) as mountain, and it would have accepted the unit",
     "movement-arrow UI gids as terrain.",
@@ -8,10 +8,15 @@
     "gid = tile index in the sheet + 1 (Tiled firstgid = 1).",
     "Terrain `type` values mirror src/types/game.types.ts TerrainType:",
     "  1 Grass, 2 Forest, 3 Water, 4 Mountain, 5 Road, 6 Building.",
-    "Cities (27/28/29) are BUILDING terrain: impassable, not LOS-blocking, and",
-    "they are properties rather than scenery (income/capture come later).",
     "Coast tiles are WATER terrain (they sit in the water cell at the land edge).",
     "Bridges are ROAD terrain (units cross them).",
+    "",
+    "BUILDINGS: maps start with NEUTRAL buildings only (gids 9-17). Faction colours",
+    "are the same 9-sprite block repeated every 18 gids (+18 per faction):",
+    "  neutral 9-17, green 27-35, blue 45-53, red 63-71, orange 81-89.",
+    "Faction-owned buildings come from map scripting, never from generation.",
+    "The block, in order: city x3, factory, dockyard, antenna, missile pad,",
+    "airport, flag.",
     "",
     "neverUseAsTerrain must never appear in generated maps; verifyMap enforces this."
   ],
@@ -34,14 +39,26 @@
     "mountain": { "type": 4, "gids": [6] },
     "road": {
       "type": 5,
-      "gids": [111, 127, 128, 129, 130, 131, 145, 146, 147, 148, 163, 164, 165, 166, 167]
+      "gids": [
+        109, 110, 111, 112, 127, 128, 129, 130, 131, 145, 146, 147, 148, 163, 164, 165, 166, 167
+      ]
     },
     "building": {
       "type": 6,
-      "city": 27,
-      "cityVariants": [27, 28, 29],
-      "gids": [27, 28, 29]
+      "city": 9,
+      "cityVariants": [9, 10, 11],
+      "gids": [9, 10, 11]
     }
+  },
+  "buildingCatalog": {
+    "$comment": "Neutral gids plus their +18n faction variants. Only the neutral city gids are generated; everything else is recorded for scripting/gameplay.",
+    "city": { "neutral": [9, 10, 11], "green": 27, "blue": 45, "red": 63, "orange": 81 },
+    "factory": { "neutral": 12, "green": 30, "blue": 48, "red": 66, "orange": 84 },
+    "dockyard": { "neutral": 13, "green": 31, "blue": 49, "red": 67, "orange": 85 },
+    "antenna": { "neutral": 14, "green": 32, "blue": 50, "red": 68, "orange": 86 },
+    "missilePad": { "neutral": 15, "green": 33, "blue": 51, "red": 69, "orange": 87, "specialUse": true },
+    "airport": { "neutral": 16, "green": 34, "blue": 52, "red": 70, "orange": 88 },
+    "flag": { "neutral": 17, "green": 35, "blue": 53, "red": 71, "orange": 89 }
   },
   "coast": {
     "corner": 19,
@@ -50,11 +67,14 @@
   "roads": {
     "horizontal": 111,
     "vertical": 145,
+    "single": 109,
+    "deadEndLeft": 110,
+    "deadEndRight": 112,
     "bends": { "northEast": 164, "northWest": 166, "southEast": 128, "southWest": 130 },
     "junctions": { "north": 165, "south": 129, "east": 146, "west": 148, "cross": 147 },
     "bridges": { "horizontal": 131, "vertical": 167, "strutHorizontal": 149 }
   },
   "flipFlags": { "horizontal": 2147483648, "vertical": 1073741824, "diagonal": 536870912 },
   "gidMask": 536870911,
-  "neverUseAsTerrain": [26, 41, 42, 43, 44, 59, 60, 61, 62, 77, 78]
+  "neverUseAsTerrain": [18, 26, 41, 42, 43, 44, 59, 60, 61, 62, 77, 78, 79, 119, 126, 143, 144]
 }

@@ -79,13 +79,54 @@ Roads can be mirrored with flip flags to fill the remaining orientations
 (e.g. a lower-right bend = 128 flipped, a dead end open left = 127 rotated).
 `166`, `167` are unconfirmed candidates for the missing pieces.
 
-### Buildings
+### Buildings — 9-sprite block, repeated every 18 gids
+
+Maps **start with neutral buildings only**; faction-owned buildings are applied
+by map scripting (on capture), never by generation.
+
+| slot | neutral | green | blue | red | orange |
+|---|---|---|---|---|---|
+| city (generic) | **9** | 27 | 45 | 63 | 81 |
+| city variant | **10** | 28 | 46 | 64 | 82 |
+| city variant | **11** | 29 | 47 | 65 | 83 |
+| factory (land units) | **12** | 30 | 48 | 66 | 84 |
+| dockyard (naval units) | **13** | 31 | 49 | 67 | 85 |
+| antenna | **14** | 32 | 50 | 68 | 86 |
+| missile launch pad | **15** | 33 | 51 | 69 | 87 |
+| **airport** | **16** | 34 | 52 | 70 | 88 |
+| flag | **17** | 35 | 53 | 71 | 89 |
+
+So a faction variant is `neutral + 18 × n` (n = 1 green, 2 blue, 3 red, 4 orange).
+The generator emits **9/10/11 only** (9 dominant); the rest is recorded for
+scripting.
+
+Notes:
+- **16 is the neutral airport** — confirmed after being mistaken for a flag. Its
+  silhouette is identical to 34/52/70/88 (alpha-mask distance 0), which is how
+  it was finally found.
+- **15 / 33 / 51 / 69 / 87 = missile launch pad**, a special-use building, not
+  part of map generation.
+- The set after the 3 cities is factory, dockyard, antenna, missile pad, airport,
+  flag.
+
+### Road extras (clarified)
 | gid | role |
-|-----|------|
-| 27 | city — generic, most common (generates income) |
-| 28, 29 | city variants (special buildings) |
-| 30 | factory — produces land units |
-| 31 | dockyard — produces naval units |
+|---|---|
+| 109 | single-tile road / plaza pavement (map-editor edge case) |
+| 110 | road dead end, closed on the **left**, open on the right |
+| 111 | road horizontal segment, open left and right |
+| 112 | 110 flipped — closed on the **right**, open on the left |
+
+### Do not use as terrain
+`18` (flag animation frame), `26` (unknown wall/grill — user: don't think about
+it), `41 42 43 44 59 60 61 62 77 78 79` (movement-arrow UI + cursor; 79 is the
+elbow curving left→top), and `119 126 143 144` (units). Enforced by
+`neverUseAsTerrain` in `palette.json` and by `verifyMap`.
+
+### Flags / animation
+`17` = neutral flag (usable as neutral decoration, and a good base for adding
+more faction colours later). `18` = flag variant or its second animation frame —
+most likely an animation frame, so it is excluded from terrain.
 
 The whole sheet repeats building/unit sets per faction colour: gray, green,
 blue, red, orange.
