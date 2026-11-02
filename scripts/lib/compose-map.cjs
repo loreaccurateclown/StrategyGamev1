@@ -391,6 +391,23 @@ function compose(width, height) {
     return seen;
   }
 
+  /** True if placing a road at (x,y) would complete a 2x2 all-road square. */
+  function formsBlock(x, y) {
+    for (const [x0, y0] of [[x, y], [x - 1, y], [x, y - 1], [x - 1, y - 1]]) {
+      let roads = 0;
+      for (let dy = 0; dy < 2; dy++) {
+        for (let dx = 0; dx < 2; dx++) {
+          const cx = x0 + dx;
+          const cy = y0 + dy;
+          if (cx === x && cy === y) continue;
+          if (isRoadCell(cx, cy)) roads++;
+        }
+      }
+      if (roads === 3) return true;
+    }
+    return false;
+  }
+
   /** Routes an L-shaped (stepped) road from (sx,sy) to the nearest road cell. */
   function connectPoint(sx, sy, exclude, maxDistance) {
     const candidates = [];
@@ -442,16 +459,17 @@ function compose(width, height) {
         shapes.push(cells);
       }
       for (const cells of shapes) {
-        // Never tunnel through a building: it is impassable, so a road drawn over
-        // it would be a fake line through a solid object.
-        let hitsBuilding = false;
+        // Never tunnel through a building (a road drawn over it would be a fake
+        // line through a solid object), and never complete a 2x2 road block (that
+        // is the "roundabout" the map already has enough of).
+        let bad = false;
         for (const [x, y] of cells) {
-          if (inBounds(x, y) && terrain[idx(x, y)] === BUILDING) {
-            hitsBuilding = true;
+          if (inBounds(x, y) && (terrain[idx(x, y)] === BUILDING || formsBlock(x, y))) {
+            bad = true;
             break;
           }
         }
-        if (hitsBuilding) continue;
+        if (bad) continue;
         for (const [x, y, orientation] of cells) setRoad(x, y, orientation);
         return true;
       }
@@ -553,8 +571,8 @@ function compose(width, height) {
     }
 
     // Branch short spurs to cities off the main road. Skip a city that already
-    // fronts a road, or whose neighbour (within 2 tiles) already does - one road
-    // serves the whole pocket instead of a stub per building.
+    // fronts a road, or one 8-adjacent to another already-fronted city - but keep
+    // this tight, because the user wants dense side-road connectivity.
     const frontsRoad = (bx, by) =>
       isRoadCell(bx + 1, by) || isRoadCell(bx - 1, by) || isRoadCell(bx, by + 1) || isRoadCell(bx, by - 1);
 
@@ -568,7 +586,7 @@ function compose(width, height) {
         if (other === cell) continue;
         const ox = other % width;
         const oy = Math.floor(other / width);
-        if (Math.max(Math.abs(bx - ox), Math.abs(by - oy)) <= 2 && frontsRoad(ox, oy)) {
+        if (Math.max(Math.abs(bx - ox), Math.abs(by - oy)) <= 1 && frontsRoad(ox, oy)) {
           neighbourServed = true;
           break;
         }
@@ -632,8 +650,7 @@ function compose(width, height) {
       else if (isRoadCell(x + 1, y)) dx = -1;
       if (dx === 0 && dy === 0) continue;
 
-      const vertical = dy !== 0;
-      const cap = vertical ? 48 : 8;
+      const cap = 12;
 
       // First worthwhile cell ahead: a road to join, or an unserved city to reach
       // (on-axis or one flank). Buildings ON the axis block (a road can't cut a
@@ -659,28 +676,8 @@ function compose(width, height) {
         }
         if (goal !== -1) break;
       }
-      // Vertical roads with no nearer target run on to the map frame, but a long
-      // barren run just trails into the edge and reads as junk. Only allow the
-      // frame run if the edge is close or the corridor passes buildings.
-      if (goal === -1 && vertical) {
-        const distToFrame = dy > 0 ? height - 1 - y : y;
-        let hasBuilding = false;
-        for (let step = 1; step <= distToFrame; step++) {
-          const fx = x + dx * step;
-          const fy = y + dy * step;
-          if (!inBounds(fx, fy)) break;
-          const t = terrain[idx(fx, fy)];
-          if (t === WATER || t === BUILDING || t === ROAD) break;
-          for (const ox of [1, -1]) {
-            if (inBounds(fx + ox, fy) && terrain[idx(fx + ox, fy)] === BUILDING) {
-              hasBuilding = true;
-              break;
-            }
-          }
-          if (hasBuilding) break;
-        }
-        if (distToFrame <= 8 || hasBuilding) goal = cap;
-      }
+      // Roads never trail to the map frame: a vertical running into the top or
+      // bottom edge reads as junk. Extensions only serve a city or join a road.
       if (goal === -1) continue;
 
       for (let step = 1; step <= goal; step++) {
@@ -697,6 +694,37 @@ function compose(width, height) {
     }
 
     if (!extended) break;
+  }
+
+  // --- 5d. side roads to any city still without road access ---------------
+  // Dense district placement leaves some buildings without a neighbouring road
+  // (those at cluster edges, or skipped by the neighbour rule). Give each such
+  // building a short side road to the nearest road, so the network reaches every
+  // city. connectPoint's formsBlock guard keeps this from piling up roundabouts.
+  {
+    const frontsRoad = (bx, by) =>
+      isRoadCell(bx + 1, by) || isRoadCell(bx - 1, by) || isRoadCell(bx, by + 1) || isRoadCell(bx, by - 1);
+    for (let pass = 0; pass < 3; pass++) {
+      let allServed = true;
+      for (let y = 2; y < height - 2; y++) {
+        for (let x = 2; x < width - 2; x++) {
+          if (terrain[idx(x, y)] !== BUILDING) continue;
+          if (frontsRoad(x, y)) continue;
+          allServed = false;
+          for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            const nx = x + dx;
+            const ny = y + dy;
+            if (!inBounds(nx, ny)) continue;
+            const t = terrain[idx(nx, ny)];
+            if (t === GRASS || t === FOREST) {
+              connectPoint(nx, ny, undefined, 12);
+              break;
+            }
+          }
+        }
+      }
+      if (allServed) break;
+    }
   }
 
   // Struts: the water cell directly SOUTH of each horizontal deck gets the
@@ -721,6 +749,30 @@ function compose(width, height) {
     growClump(irand(4, 10), FOREST);
     nonGrass = 0;
     for (let i = 0; i < n; i++) if (terrain[i] !== GRASS) nonGrass++;
+  }
+
+  // Dense roads + max cities can push coverage past the band's top edge; thin
+  // interior forest back to grass to stay inside it. The border band is left
+  // alone (interior cells only), and roads/buildings/water are never touched.
+  const coverageCeiling = Math.floor(n * 0.42);
+  if (nonGrass > coverageCeiling) {
+    const interior = [];
+    for (let i = 0; i < n; i++) {
+      if (terrain[i] !== FOREST) continue;
+      const x = i % width;
+      const y = Math.floor(i / width);
+      if (x >= 3 && y >= 3 && x < width - 3 && y < height - 3) interior.push(i);
+    }
+    // Shuffle so thinning is spread out rather than erasing one region.
+    for (let k = interior.length - 1; k > 0; k--) {
+      const j = Math.floor(Math.random() * (k + 1));
+      [interior[k], interior[j]] = [interior[j], interior[k]];
+    }
+    let j = 0;
+    while (nonGrass > coverageCeiling && j < interior.length) {
+      terrain[interior[j++]] = GRASS;
+      nonGrass--;
+    }
   }
 
   // --- 6. terrain -> layer gids --------------------------------------------
