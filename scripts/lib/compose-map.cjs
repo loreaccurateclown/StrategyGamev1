@@ -344,9 +344,11 @@ function compose(width, height) {
   }
 
   const cityClusters = [];
-  // More, denser districts so the map fills out; overlapping clusters merge into
-  // "big cities" naturally because each building just needs a grass cell.
-  for (let i = 0, count = irand(3, 6); i < count; i++) placeCityBlock(irand(5, 9));
+  // Maximise the number of cities: many overlapping districts, each scattering a
+  // good number of buildings. Buildings only need a grass cell, so the practical
+  // ceiling is free interior grass plus the occupancy band (the connectivity
+  // guard still reverts any district that would wall off a pocket).
+  for (let i = 0, count = irand(8, 12); i < count; i++) placeCityBlock(irand(8, 14));
 
   if (process.env.COMPOSE_DEBUG) {
     console.log(
@@ -657,8 +659,28 @@ function compose(width, height) {
         }
         if (goal !== -1) break;
       }
-      // Vertical roads with no nearer target run on to the map frame.
-      if (goal === -1 && vertical) goal = cap;
+      // Vertical roads with no nearer target run on to the map frame, but a long
+      // barren run just trails into the edge and reads as junk. Only allow the
+      // frame run if the edge is close or the corridor passes buildings.
+      if (goal === -1 && vertical) {
+        const distToFrame = dy > 0 ? height - 1 - y : y;
+        let hasBuilding = false;
+        for (let step = 1; step <= distToFrame; step++) {
+          const fx = x + dx * step;
+          const fy = y + dy * step;
+          if (!inBounds(fx, fy)) break;
+          const t = terrain[idx(fx, fy)];
+          if (t === WATER || t === BUILDING || t === ROAD) break;
+          for (const ox of [1, -1]) {
+            if (inBounds(fx + ox, fy) && terrain[idx(fx + ox, fy)] === BUILDING) {
+              hasBuilding = true;
+              break;
+            }
+          }
+          if (hasBuilding) break;
+        }
+        if (distToFrame <= 8 || hasBuilding) goal = cap;
+      }
       if (goal === -1) continue;
 
       for (let step = 1; step <= goal; step++) {
