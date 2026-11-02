@@ -1,7 +1,7 @@
 # Plan: Advance Wars-Style 2D Turn-Based Strategy Game in Phaser 4 + TypeScript
 
 ## TL;DR
-Build an Advance Wars-inspired turn-based strategy game using **Phaser 4 (TypeScript)** on a **64×48 tile board built from 16×16 px source tiles** (a 1024×768 px world), **displayed at a fixed 48 px per tile** (3× the source art) on a window-filling canvas with camera panning. Use a **single `BattleScene` with an internal FSM** for phase management, custom **Dijkstra pathfinding** with per-tile movement costs, and a **three-state fog-of-war** model. Maps are produced procedurally by `@reldens/tile-map-generator` from the Kenney tiny-battle tileset — see [`phase_4.md`](./phase_4.md) and [`progress.md`](./progress.md).
+Build an Advance Wars-inspired turn-based strategy game using **Phaser 4 (TypeScript)** on a **64×48 tile board built from 16×16 px source tiles** (a 1024×768 px world), **displayed at a fixed 48 px per tile** (3× the source art) on a window-filling canvas with camera panning. Use a **single `BattleScene` with an internal FSM** for phase management, custom **Dijkstra pathfinding** with per-tile movement costs, and a **three-state fog-of-war** model. Maps are produced procedurally by a purpose-built composer (`scripts/lib/compose-map.cjs`) over the Kenney tiny-battle tileset — see [`phase_4.md`](./phase_4.md) and [`progress.md`](./progress.md).
 
 ---
 
@@ -109,8 +109,8 @@ Originally "Tiled Integration & Tooling". The map is **not** hand-authored in th
 
 | Step | Task | Details | Status |
 |------|------|---------|--------|
-| 4.1 | Map generation pipeline | `npm run map:generate` → `public/assets/maps/level_01.json` via `@reldens/tile-map-generator@0.64.0`, seeded for reproducibility. Terrain: grass/forest/water/mountain. Tile size 16 px | ✅ done |
-| 4.1b | Generator hardening | Raise density from 21 % by improving placement efficiency (`freeSpace` 0 for forest/mountain, larger clumps, water kept modest), add connectivity + occupancy assertions to `verifyMap`, emit a `level_01.terrain.json` sidecar, and collapse 87 layers to ~4 | 🔶 G1/G2/G5 done (35.9 % coverage, connectivity-proven); G3/G4 pending contract decision |
+| 4.1 | Map generation pipeline | `npm run map:generate` → `public/assets/maps/level_01.json` via the purpose-built composer (`scripts/lib/compose-map.cjs`), seeded for reproducibility. Terrain: grass/forest/water/mountain/road/building. Tile size 16 px | ✅ done |
+| 4.1b | Generator hardening | Composer rewrite: border band, attached clumps, road network, city districts, `verifyMap` occupancy + connectivity + road-connectivity assertions, `level_01.terrain.json` sidecar, 4-layer output | ✅ G1–G4 done; contract frozen |
 | 4.2a | Render the generated map | `BattleScene` loads the JSON + tileset texture with `load.tilemapTiledJSON` / `load.image`, builds one `createLayer` per non-collision layer, fits the camera to the board | ✅ done, **needs revision** for the 48 px/tile + panning decision (fixed zoom 3 on a window-filling canvas, replacing `fitCameraToMap`) |
 | 4.2b | `TileMapManager` from the map | Consume the **terrain sidecar from 4.1b**, not the visual layers — no gid reverse-mapping in the client. Validate at the import boundary | ⬜ blocked on 4.1b |
 | 4.3 | Wire layers to systems | Terrain → costs; collision layer → walkable; fog layer → visibility tracking | ⬜ blocked on 4.1b |
@@ -167,7 +167,7 @@ Originally "Tiled Integration & Tooling". The map is **not** hand-authored in th
 
 ## Verification Steps
 
-1. **Map generation:** `npm run map:generate` exits 0 and prints `Verified: 64x48 @ 16px, 87 layers | occupancy: forest 16.9%, mountain 9.1%, water 9.9%, grass 64.1% | connectivity: 1 component(s), 2548/2548 walkable cells`; running it twice with the same `--seed` produces byte-identical JSON
+1. **Map generation:** `npm run map:generate` exits 0 and prints `Verified: 64x48 @ 16px, 4 layers | occupancy: forest 10.5%, mountain 0.6%, water 10.7%, road 10.5%, building 2.9%, grass 64.9% | connectivity: 1 component(s), 2654/2654 walkable cells | roads: 1 component(s), 322/322 road cells`; running it twice with the same `--seed` produces byte-identical JSON
 2. **Build:** `npm run dev` renders the 1024×768 world board with grass, forest, water, and mountain tiles at 48 px per tile on a window-filling canvas, pannable — no magenta textures, no holes in the ground layer
 3. **Pathfinding:** click unit → reachable tiles highlighted (water unreachable, forest costs 2, mountain costs 3)
 4. **Movement:** click reachable tile → unit animates along path over ~200 ms
@@ -257,8 +257,7 @@ scripts/
 ├── generate-map.cjs            # npm run map:generate
 └── lib/
     ├── prng.cjs                # seeded Math.random replacement
-    ├── tile-grid.cjs           # ASCII art → Tiled layer objects
-    └── map-elements.cjs        # forest / water / mountain element layers
+    └── compose-map.cjs         # the AW-style map composer
 
 assets/generator/
 └── palette.json                # verified gid ↔ terrain table
@@ -272,7 +271,7 @@ assets/generator/
 |-------|-------|--------------|
 | Tile size | 32×32 px (no tileset of that size existed) | 16×16 px, matching `kenney_tinybattle.tsx` |
 | World size | 1024×1024 px | 1024×768 px (64×48 tiles × 16 px) |
-| Map source | Hand-authored Tiled project | Generated by `@reldens/tile-map-generator`, seeded |
+| Map source | Hand-authored Tiled project | Generated by the purpose-built composer (`scripts/lib/compose-map.cjs`), seeded |
 | Phase 4 reference | `phase_4.md` did not exist | Written |
 | Architecture diagram | Mixed scene-per-phase with single-scene FSM | Only top-level scenes; FSM inside `BattleScene` |
 | Phase 1 scope | Diagram implied all scenes exist on day 1 | Phase 1 uses `BattleScene` only; other scenes are Phase 2+ |

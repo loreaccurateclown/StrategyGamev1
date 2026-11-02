@@ -23,16 +23,11 @@ export const TERRAIN_DEFS: Record<TerrainType, TerrainDef> = {
     [TerrainType.Forest]: {moveCost: 2, passable: true, blocksLOS: false},
     [TerrainType.Water]: {moveCost: Infinity, passable: false, blocksLOS: true},
     [TerrainType.Mountain]: {moveCost: 3, passable: true, blocksLOS: true},
-    // Road is defined ahead of the tile palette: the Kenney tiny-battle sheet has
-    // no road tile yet, so the map generator never emits it. Keeping the enum
-    // member means a future road tileset only needs a palette entry, not a type change.
     [TerrainType.Road]: {moveCost: 1, passable: true, blocksLOS: false},
     [TerrainType.Building]: {moveCost: Infinity, passable: false, blocksLOS: false}
 };
 
-export type UnitType = {
-    type: "infantry";
-};
+export type UnitType = "infantry" | "l_veh" | "m_veh" | "h_veh" | "sh_veh" | "heli" | "prop_plane" | "jet_plane" | "l_ship" | "m_ship" | "h_ship" | "sh_ship" | "offmap";
 
 export interface ReachableTile {
     pos: GridPos,

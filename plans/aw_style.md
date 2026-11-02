@@ -38,7 +38,7 @@ Reference render: `tools/map-preview.png`.
 | Open central corridors | Uniform noise; no lanes, no choke points |
 | Clumps vary in size and touch each other | Every clump is the same size and space-separated (`freeSpace`) |
 
-**Root cause:** `@reldens/tile-map-generator` is a *scatter* placer — it reserves a box per element instance and drops non-overlapping copies. It has no concept of borders, bands, rivers, or attachment, so no parameter tuning reaches AW's composed look. The library's cost model (reserve `(w+2f)×(h+2f)` per placement) actively forces the evenly-spaced look we currently have.
+**Root cause:** `@reldens/tile-map-generator` is a *scatter* placer — it reserves a box per element instance and drops non-overlapping copies. It has no concept of borders, bands, rivers, or attachment, so no parameter tuning reaches AW's composed look. The library's cost model (reserve `(w+2f)×(h+2f)` per placement) actively forces the evenly-spaced look. **Resolved:** the library was replaced by `scripts/lib/compose-map.cjs` (see [`progress.md`](./progress.md)).
 
 ## Plan for the initial fit
 
@@ -46,7 +46,7 @@ Replace the scatter step with a **composition step** in `scripts/generate-map.cj
 
 Order of work:
 
-1. **Composer core** — emit layers directly: `ground`, `ground-variations`, one visual layer per terrain, one merged `collisions` mask. (This also collapses 87 layers to ~5, so it delivers G4 for free and simplifies G3's sidecar.)
+1. **Composer core** — emit layers directly: `ground`, `ground-variations`, one visual layer per terrain, one merged `collisions` mask. (This also collapsed 87 layers to **4** — G4 delivered.)
 2. **Border band** — walk the perimeter, stamp forest (with occasional mountain) at a per-side/thickness noise, leaving 2–4 openings.
 3. **Blobs that attach** — grow forest/mountain from seeds *on the band* and occasionally on other structure, via random-walk growth with a size distribution, instead of fixed rectangles.
 4. **Roads + bridges** — 1–2 road runs edge to edge using the confirmed road set

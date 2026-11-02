@@ -2,7 +2,9 @@
 
 Lessons learned while setting up this Phaser 4 + TypeScript project on Windows PowerShell. Recorded so future phases don't repeat the failures below.
 
-## Map generation (`@reldens/tile-map-generator`)
+## Map generation (`@reldens/tile-map-generator` — retired 2026-11-02)
+
+> **Superseded.** The scatter placer was replaced by the purpose-built composer in `scripts/lib/compose-map.cjs`, and the dependency is removed from `package.json`. These notes are kept because several still apply to the current scripts (all `.cjs`, 1-based gids, seeded PRNG, collision-name matching, tileset-name-not-filename). Entries about `elementsQuantity`, `freeSpace`, silent board growth, composite mode and `placeRejectResolver` describe the **retired library only**.
 
 - **Everything must be `.cjs`.** `package.json` sets `"type": "module"`, so a plain `.js` script using `require()` throws. The generator itself is CommonJS-only (`main: index.js`) and Node-only (it writes files via `@reldens/server-utils`), so it can never be imported from browser code.
 - **Gids are 1-based.** `createTiledMapObject` hard-codes `firstgid: 1` and copies layer values verbatim. `gid = tile index + 1`. A `groundTile` of `0` is falsy to the generator and means *no ground layer at all* — the board renders as holes.
@@ -20,7 +22,7 @@ Lessons learned while setting up this Phaser 4 + TypeScript project on Windows P
 - **Kenney's `tilemap.png` is an indexed (colorType 3) PNG.** A hand-rolled decoder must handle `PLTE`/`tRNS`; truecolour-only readers fail with `Unsupported PNG (bitDepth=8 colorType=3)`.
 - **Verify tile roles from pixel data, not screenshots.** `tools/tile-rgb.cjs` prints exact RGB histograms plus opacity per tile. Ground tiles must be 100% opaque; object tiles (trees, rocks) always carry transparent pixels. Reading 16 px art by eye at normal zoom produced wrong guesses.
 - **`kenney_tinybattle_indiv.tsx` is broken** — its `image` paths point outside the project. Use `kenney_tinybattle.tsx` as the authority (16 px, spacing 1, margin 0, 18 columns, 198 tiles, 305×186 px).
-- **There is no road tile** in this sheet. The only gold `rgb(253,190,83)` pixels are 13% of gid 3, a small decoration on grass.
+- **Road tiles DO exist** — the earlier "no road tile" conclusion was wrong. Confirmed set: horizontal 111, vertical 145, single 109, dead-ends 110/112/127/163, bends 128/130/164/166, tees 129/146/148/165, cross 147, bridge deck 131/167, strut 149. Authoritative table: [`tile_roles.md`](./tile_roles.md).
 
 ## Phaser
 

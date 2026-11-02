@@ -25,7 +25,7 @@
 |------|------|---------|
 | 1.0 | ✅ **Completed — verify Phaser API and pin version** | Phaser 4.2.1 is pinned exactly in `package.json`. Verified `Scene.load.tilemapTiledJSON`, `Tilemap.getTileAt`, and `TilemapLayer.setCollision` against the installed types on 2026-10-31; the verification note is at the top of this file. |
 | 1.1 | ✅ **Completed — verify Phaser setup + TypeScript** | Vite, TypeScript, and Phaser are configured. `src/main.ts` boots a minimal Phaser scene; `npm run build` and the browser startup were verified. Do not rerun project scaffolding. |
-| 1.2 | ✅ **Completed — define core types** | `GridPos`, `TerrainType`, `UnitType`, `TerrainDef` (moveCost, passable, blocksLOS), `ReachableTile`, and `TERRAIN_DEFS` live in `src/types/game.types.ts`. `TerrainType` is now `Grass = 1, Forest = 2, Water = 3, Mountain = 4, Road = 5`. `Road` has a `TERRAIN_DEFS` entry but no palette entry (the tileset has no road tile), so no map emits it yet. |
+| 1.2 | ✅ **Completed — define core types** | `GridPos`, `TerrainType`, `UnitType`, `TerrainDef` (moveCost, passable, blocksLOS), `ReachableTile`, and `TERRAIN_DEFS` live in `src/types/game.types.ts`. `TerrainType` is `Grass = 1, Forest = 2, Water = 3, Mountain = 4, Road = 5, Building = 6`, and **every one of the six is emitted by the generator** — roads and neutral-city buildings arrived with the composer rewrite (see [`phase_4.md`](./phase_4.md) and [`progress.md`](./progress.md)). |
 | 1.3 | ✅ **Completed — map source** | ~~Hardcoded 32×32 `number[][]`~~ Superseded: the board is generated (see [`phase_4.md`](./phase_4.md)) and rendered by `src/scenes/BattleScene.ts` at 16 px per tile. Tile ids in the JSON are **gids** (1-based), mapped to `TerrainType` through `assets/generator/palette.json`. Reading that JSON into `TerrainType[][]` is step 4.2b, not done yet. |
 | 1.3b | **Use the terrain definitions for movement rules** | `TERRAIN_DEFS` is the source of truth. A known terrain is traversable only when `passable` is true; use its `moveCost` as the enter-cost. Impassable terrain and unknown tile indices resolve to `Infinity` at the pathfinding boundary. Never pass a negative movement cost to Dijkstra. |
 | 1.4 | Implement **Dijkstra** pathfinding | `getReachableTiles` with per-tile move costs; store `cost` (**enter-cost convention: start tile = 0**) and `parent` per tile to reconstruct paths. Export `tileKey(pos)` and `reconstructPath(reachable, target): GridPos[]`. See the Pathfinding interface below |
@@ -52,9 +52,19 @@ export interface ReachableTile {
 }
 ```
 
-`UnitType` is a union of unit-name string literals, starting as `type UnitType = "infantry"` and extended as unit kinds are implemented (for example, `"infantry" | "tank"`). It describes a unit's kind, not the full unit object.
+`UnitType` is a union of unit-name string literals describing a unit's **kind**, not the full unit object. Current value in `src/types/game.types.ts`:
 
-`TERRAIN_DEFS` is the single source of truth for `TerrainType` movement costs and passability. Current values:
+```ts
+type UnitType =
+  | "infantry" | "l_veh" | "m_veh" | "h_veh" | "sh_veh"
+  | "heli" | "prop_plane" | "jet_plane"
+  | "l_ship" | "m_ship" | "h_ship" | "sh_ship"
+  | "offmap";
+```
+
+> **Must be exported** (`export type UnitType = …`). With `noUnusedLocals` on, an alias that is neither used in its own file nor exported is a compile error (`TS6196`), and nothing else can import it.
+
+`TERRAIN_DEFS` is the single source of truth for `TerrainType` movement costs and passability. Current values (mirroring `src/types/game.types.ts`):
 
 | Terrain | `moveCost` | `passable` | `blocksLOS` |
 |---------|-----------|------------|-------------|
@@ -63,6 +73,7 @@ export interface ReachableTile {
 | Water | `Infinity` | ❌ | ✅ |
 | Mountain | 3 | ✅ | ✅ |
 | Road | 1 | ✅ | ❌ |
+| Building | `Infinity` | ❌ | ❌ |
 
 ### `tileKey(pos): string`
 
@@ -213,12 +224,12 @@ describe("reconstructPath", () => {
 ---
 
 ## Definition of Done
-- `npm run dev` shows a **64×48 tile board at 48 px/tile (1024×768 px world, 3072×2304 px on screen)** with 4 terrain types (grass / forest / water / mountain), on a window-filling canvas the camera can pan
-- One unit marker on grass. Click → reachable tiles highlighted (water unreachable, forest costs 2, mountain costs 3)
+- `npm run dev` shows a **64×48 tile board at 48 px/tile (1024×768 px world, 3072×2304 px on screen)** with all six terrain types (grass / forest / water / mountain / road / building), on a window-filling canvas the camera can pan
+- One unit marker on grass. Click → reachable tiles highlighted (water and building unreachable; forest costs 2, mountain costs 3, road 1)
 - Click a reachable tile → unit animates along path over ~200 ms
 - `npm test` passes all Pathfinding tests
 
-**Done so far:** first bullet (board renders, all 4 terrains present, verified). Remaining: unit marker, reachable highlighting, movement, and the `Pathfinding.ts` / test file, which do not exist yet.
+**Done so far:** first bullet (board renders, all 6 terrains present, verified). Remaining: unit marker, reachable highlighting, movement, and the `Pathfinding.ts` / test file, which do not exist yet.
 
 ---
 

@@ -2,13 +2,13 @@
 
 **Goal:** A reproducible, scripted pipeline that turns the Kenney tiny-battle tileset into a playable board, plus the code that reads that board into the game's own terrain model. No hand-authoring in the Tiled editor.
 
-**Status:** 4.1, 4.1b-G1/G2, and 4.2a are done. **G3/G4 (sidecar + layer merge) are next and await the contract decision**; 4.2b and 4.3 are not started and stay blocked on that decision — the map contract has to be frozen before client code reads it.
+**Status:** 4.1, 4.1b (G1–G4) and 4.2a are done. The map contract is **frozen**: 4 layers (`ground`, `ground-variations`, `terrain`, `collisions`) plus `level_01.terrain.json`. 4.2b (`TileMapManager`) is therefore **unblocked**; 4.3 follows it.
 
 ---
 
 ## Why not hand-author in Tiled
 
-The repo already ships a 16 px tileset (`assets/tilemaps/kenney_tinybattle.tsx`), so re-tiling was never the problem — producing *boards* was. `@reldens/tile-map-generator` does that procedurally, which means a new map is a command, not an afternoon of clicking. The trade-off is that the generator is opinionated and has several sharp edges (see below), so this file records them.
+The repo already ships a 16 px tileset (`assets/tilemaps/kenney_tinybattle.tsx`), so re-tiling was never the problem — producing *boards* was. The original `@reldens/tile-map-generator` scatter placer did that procedurally but could not reach a composed AW look; it has since been **replaced by `scripts/lib/compose-map.cjs`**. A new map is still a command (`npm run map:generate`), not an afternoon of clicking. The sharp edges of the retired library are recorded below for history.
 
 ---
 
@@ -57,14 +57,14 @@ scripts/
 ├── generate-map.cjs            # npm run map:generate
 └── lib/
     ├── prng.cjs                # seeded Math.random replacement
-    ├── tile-grid.cjs           # ASCII art → Tiled layer objects
-    └── map-elements.cjs        # forest / water / mountain element layers
+    └── compose-map.cjs         # the AW-style composer (border band → clumps → cities → roads → gids)
 
 assets/generator/
 └── palette.json                # verified gid ↔ terrain table
 
 public/assets/maps/             # generator output (committed)
 ├── level_01.json
+├── level_01.terrain.json       # TerrainType sidecar (client never reverse-maps gids)
 └── kenney_tinybattle.png       # copied here by the generator
 ```
 
@@ -97,7 +97,9 @@ The generator calls bare `Math.random()` and exposes no seed option, so `scripts
 | Mountain | 111 | 111, 129, 131, 145–148, 165, 167 | 67% slate `rgb(82,96,124)` + 33% highlights, fully opaque |
 | Forest | 28 | 27, 28, 29, 30, 31 | 94% opaque, 41% trunk + 43% canopy |
 
-**There is no road tile.** The only gold pixels (`rgb(253,190,83)`) are 13% of gid 3 — a decoration on grass. `TerrainType.Road` therefore exists in the type system (cost 1) but the generator never emits it, and no path is carved (`mainPathSize` unset).
+**There IS a road tile** — an earlier revision of this file claimed otherwise and was wrong. The full grammar is implemented: horizontal 111, vertical 145, single 109, dead-ends 110/112/127/163, bends 128/130/164/166, tees 129/146/148/165, cross 147, bridge deck 131/167, strut 149. `TerrainType.Road` (cost 1) is emitted on ~10 % of every board.
+
+> The gid table above is **historical** and predates the palette correction (it assigns mountain to 111 and forest to 28, which are road and unit/UI gids respectively). [`assets/generator/palette.json`](../assets/generator/palette.json) and [`tile_roles.md`](./tile_roles.md) are authoritative.
 
 ### Element authoring
 
@@ -129,7 +131,7 @@ Every element produces **two** layers: `<key>-visual` and `<key>-collisions`. Th
 3. Render one `createLayer` per layer whose name does **not** contain `collisions`.
 4. `fitCameraToMap` — integer zoom (`Math.max(1, Math.floor(fitRatio))`) so 16 px art stays crisp, bounds set from `map.widthInPixels`. **Superseded by the 48 px/tile + panning decision** — this step renders only the board center until the display rework lands.
 
-Historical verified output (32×32 era): `rendered 14 layers, skipped 13 collision layers (32x32 @ 16px = 512x512px)`. Current default run is 64×48 with 87 layers (44 rendered / 43 collision).
+Historical verified output (32×32 era): `rendered 14 layers, skipped 13 collision layers (32x32 @ 16px = 512x512px)`. Current default run is 64×48 with **4 layers** (3 rendered / 1 collision).
 
 Layer inventory for a default run:
 
@@ -232,7 +234,7 @@ Starting point, to be iterated by measurement rather than treated as a spec:
 
 The reservation total stays near half the board rather than the 58–60 % that was already proven on 1024 cells: a 3072-cell board has more room to breathe, and staying well under the limit keeps `placeRejectResolver` from having to rearrange or grow. Denser clumps also improve the art (`f = 0` lets a grove be a grove instead of a scatter of separated clumps).
 
-**Shipped as proposed, verified on seeds 1234, 999, 42, 7:** `Verified: 64x48 @ 16px, 87 layers | occupancy: forest 16.9 %, mountain 9.1 %, water 9.9 %, grass 64.1 % | connectivity: 1 component(s), 2548/2548 walkable cells`. No silent growth on any seed, byte-identical output per seed. The 50×50 probe with these counts correctly fails the band (44.2 %), which is expected — 50×50 would need counts scaled ≈0.81×, and it still letterboxes at 1440p@100 % (viewport is 53 tiles wide > 50).
+**Historical (32×32 era, retired library):** `Verified: 64x48 @ 16px, 87 layers | occupancy: forest 16.9 %, mountain 9.1 %, water 9.9 %, grass 64.1 % | connectivity: 1 component(s), 2548/2548 walkable cells`. The composer now emits `4 layers` with a different terrain mix (grass ~65 %, forest ~10 %, water ~11 %, road ~10 %, building ~3 %).
 
 ### G2 — Make `verifyMap` prove the map is playable ✅ (done 2026-11-01)
 
@@ -259,13 +261,13 @@ The generator already knows each gid's terrain when it writes the layer, so it s
 
 This replaces 4.2b's reverse-mapping entirely.
 
-### G4 — Collapse 87 layers to ~4
+### G4 — Collapse 87 layers to 4 ✅ (done — composer emits 4 directly)
 
 `MapLayersComposer` already supports `autoMergeLayersByKeys`, which merges by name substring and buckets overlapping members so draw order survives (`map-layers-composer.js:101`, `layer-data-factory.js:118`).
 
 - `autoMergeLayersByKeys: ['visual', 'collisions']`
 - 44 rendered layers → 3 (`ground`, `ground-variations`, `merge-visual`); 43 collision layers → 1 (`merge-collisions`, still skipped by the existing substring check).
-- Each `TilemapLayer` is a full 64×48 render object; 44 of them for 1104 tiles is real memory and fill-rate cost (the JSON is already 551 KB), and a 4-layer contract is far friendlier for the client.
+- Each `TilemapLayer` is a full 64×48 render object; dozens of them for ~1100 tiles is real memory and fill-rate cost (the old JSON was 551 KB; the composer's 4-layer JSON is **26 KB**), and a 4-layer contract is far friendlier for the client.
 - **Caveat:** merging `ground` with `ground-variations` does *not* collapse them — the variations overlap the ground everywhere, so the bucketing stacks them. Leave both alone.
 - Layer names change, so this must land **with G3, before 4.2b is written**.
 
