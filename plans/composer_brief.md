@@ -96,3 +96,35 @@ density. Useful helpers already exist:
 - `tools/render-tile-test.cjs` — hand-authored gid layouts with flip support
 - `tools/make-montage.cjs` — compile several PNGs into one comparison sheet
 - `tools/upscale-png.cjs` — nearest-neighbour zoom for reading 16 px art
+
+## Road planning (as implemented)
+
+The AW road grammar settled over several iterations. The rules below are the
+current behaviour in `scripts/lib/compose-map.cjs` and are non-obvious enough to
+keep documented:
+
+- **Main skeleton (step 3b), the only roads that reach the map edge:** one
+  horizontal road spanning the full width (bridges the strait with deck 131 over
+  struts 149), one vertical road spanning the full height with a single step.
+  Laid *before* cities so the strait is crossable when the connectivity guard
+  runs.
+- **District roads (routeDistrict):** each city cluster gets a **main road
+  through it** — the row or column with the most building frontage — connected to
+  the network at both ends, not a box/ring (a ring's 4-way corners read as
+  unnatural roundabouts). Short **spurs** reach off-road cities; a city is only
+  skipped when 8-adjacent to an already-served city.
+- **Tip extension (5c):** dead-ends extend up to 12 tiles to serve a city or join
+  a road. They **never run to the map frame** — trailing a road into the top or
+  bottom edge reads as junk (tried and rejected: 3/4 looked wrong).
+- **Side roads (5d):** any city still without road access gets a short spur to
+  the nearest road, so the network reaches every city.
+- **Roundabout guard:** `connectPoint` refuses any path that would complete a
+  2×2 all-road square (`formsBlock`), and the tip extension blocks a cell with
+  ≥3 road neighbours. T-junctions and bends are allowed; 4-ways are the thing to
+  avoid.
+- **Dead-end caps:** a road cell with one neighbour uses the cul-de-sac tile —
+  127 (open bottom), 163 (open top), 110 (open right), 112 (open left); isolated
+  single tiles use 109.
+- **Coverage:** after normalisation grows forest to the 35% floor, a **forest-trim
+  pass** thins interior forest (never the border band, roads, buildings or water)
+  back to grass if dense roads + max cities push non-grass past the 42% ceiling.
