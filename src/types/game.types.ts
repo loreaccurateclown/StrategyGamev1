@@ -9,6 +9,7 @@ export enum TerrainType {
     Water = 3,
     Mountain = 4,
     Road = 5,
+    Building = 6
 }
 
 export interface TerrainDef {
@@ -26,6 +27,7 @@ export const TERRAIN_DEFS: Record<TerrainType, TerrainDef> = {
     // no road tile yet, so the map generator never emits it. Keeping the enum
     // member means a future road tileset only needs a palette entry, not a type change.
     [TerrainType.Road]: {moveCost: 1, passable: true, blocksLOS: false},
+    [TerrainType.Building]: {moveCost: Infinity, passable: false, blocksLOS: false}
 };
 
 export type UnitType = {

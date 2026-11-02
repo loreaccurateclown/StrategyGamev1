@@ -231,16 +231,18 @@ function verifyMap(map, composed) {
       else if (resolved.type !== model) {
         problems.push(`cell ${i}: visual ${resolved.name} but terrain model is type ${model}`);
       }
-      // collision layer must mark exactly the water cells
+      // collision layer must mark exactly the impassable cells: water (3) and
+      // buildings (6). Buildings are impassable per TERRAIN_DEFS.
       const blocked = collisionsLayer.data[i] !== 0;
-      if (blocked !== (model === 3)) {
+      const shouldBlock = model === 3 || model === 6;
+      if (blocked !== shouldBlock) {
         problems.push(`collision mismatch at cell ${i} (blocked=${blocked}, model=${model})`);
       }
     }
   }
 
   // occupancy
-  const counts = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+  const counts = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 };
   for (const t of composed.terrain) counts[t] = (counts[t] || 0) + 1;
   const pct = (k) => ((100 * (counts[k] || 0)) / total).toFixed(1) + "%";
   const nonGrass = total - counts[1];
@@ -248,18 +250,19 @@ function verifyMap(map, composed) {
     const p = ((100 * nonGrass) / total).toFixed(1) + "%";
     problems.push(`obstacle coverage ${p} outside band ${OCCUPANCY_BAND.map((b) => (b * 100).toFixed(0) + "%").join("..")}`);
   }
-  for (const [name, type] of [["forest", 2], ["water", 3], ["mountain", 4], ["road", 5]]) {
+  for (const [name, type] of [["forest", 2], ["water", 3], ["mountain", 4], ["road", 5], ["building", 6]]) {
     if (!counts[type]) problems.push(`no ${name} tiles on the board`);
   }
 
-  // connectivity: water is the only impassable terrain
+  // connectivity: water (3) and buildings (6) are impassable
+  const impassable = (t) => t === 3 || t === 6;
   let walkable = 0;
   let components = 0;
   let largest = 0;
   const seen = new Uint8Array(total);
-  for (let i = 0; i < total; i++) if (composed.terrain[i] !== 3) walkable++;
+  for (let i = 0; i < total; i++) if (!impassable(composed.terrain[i])) walkable++;
   for (let start = 0; start < total; start++) {
-    if (composed.terrain[start] === 3 || seen[start]) continue;
+    if (impassable(composed.terrain[start]) || seen[start]) continue;
     components++;
     let size = 0;
     const stack = [start];
@@ -274,7 +277,7 @@ function verifyMap(map, composed) {
         const ny = y + dy;
         if (nx < 0 || ny < 0 || nx >= mapWidth || ny >= mapHeight) continue;
         const ni = ny * mapWidth + nx;
-        if (composed.terrain[ni] !== 3 && !seen[ni]) {
+        if (!impassable(composed.terrain[ni]) && !seen[ni]) {
           seen[ni] = 1;
           stack.push(ni);
         }
@@ -297,7 +300,8 @@ function verifyMap(map, composed) {
 
   console.log(
     `Verified: ${map.width}x${map.height} @ ${map.tilewidth}px, ${map.layers.length} layers | ` +
-      `occupancy: forest ${pct(2)}, mountain ${pct(4)}, water ${pct(3)}, road ${pct(5)}, grass ${pct(1)} | ` +
+      `occupancy: forest ${pct(2)}, mountain ${pct(4)}, water ${pct(3)}, road ${pct(5)}, ` +
+      `building ${pct(6)}, grass ${pct(1)} | ` +
       `connectivity: ${components} component(s), ${largest}/${walkable} walkable cells`
   );
 }

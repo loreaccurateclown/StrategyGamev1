@@ -8,11 +8,12 @@
  *      two landmasses, creating a chokepoint (the AW "land map with one water
  *      area" pattern; it can reach ~14% of the board)
  *   4. forest clumps and mountain clusters scattered through the interior
+ *   4b. metropolitan city blocks (BUILDING terrain) in the open interior
  *   5. a horizontal road bridging the strait, and a vertical road (with one
  *      bend) on the left landmass
  *
- * Terrain codes mirror TerrainType: 1 Grass, 2 Forest, 3 Water, 4 Mountain, 5 Road.
- * Coast tiles and bridges are WATER and ROAD terrain respectively.
+ * Terrain codes mirror TerrainType: 1 Grass, 2 Forest, 3 Water, 4 Mountain,
+ * 5 Road, 6 Building. Coast tiles and struts are WATER terrain, bridges ROAD.
  */
 
 const palette = require("../../assets/generator/palette.json");
@@ -22,6 +23,7 @@ const FOREST = 2;
 const WATER = 3;
 const MOUNTAIN = 4;
 const ROAD = 5;
+const BUILDING = 6;
 
 const FLIP_H = palette.flipFlags.horizontal;
 const FLIP_V = palette.flipFlags.vertical;
@@ -31,6 +33,7 @@ const M = palette.terrain.mountain;
 const W = palette.terrain.water;
 const C = palette.coast;
 const R = palette.roads;
+const B = palette.terrain.building;
 
 /** Random integer in [a, b] inclusive. */
 function irand(a, b) {
@@ -157,6 +160,21 @@ function compose(width, height) {
     }
   }
 
+  // --- 3b. reserve the crossing BEFORE anything connectivity-sensitive -----
+  // The strait splits the map in two, so it must be crossable before cities are
+  // placed: a city placed on an uncrossable map reports as "stranding" and gets
+  // reverted. The crossing is a 2-wide land causeway (which the horizontal road
+  // later runs over), not a bridge tile — a bridge is walkable anyway, and using
+  // land here keeps the connectivity picture honest at every stage.
+  const roadY = irand(10, height - 10);
+  const crossingHalfHeight = 1;
+  for (let y = roadY - crossingHalfHeight; y <= roadY + crossingHalfHeight; y++) {
+    if (y < 0 || y >= height) continue;
+    for (let x = straitMinX; x <= straitMaxX; x++) {
+      if (inBounds(x, y)) terrain[idx(x, y)] = GRASS;
+    }
+  }
+
   // --- 4. interior forest clumps + mountain clusters ----------------------
   function growClump(size, type) {
     let seed = -1;
@@ -207,6 +225,105 @@ function compose(width, height) {
   for (let i = 0, count = irand(8, 12); i < count; i++) growClump(irand(3, 8), FOREST);
   for (let i = 0, count = irand(3, 6); i < count; i++) growClump(irand(2, 4), MOUNTAIN);
 
+  // --- 4b. metropolitan areas: compact city blocks -------------------------
+  // Cities are properties (income/capture arrive later), so they are placed as
+  // tight blocks in the open interior rather than rambled by growClump: a 2x2
+  // block plus a few attached neighbours reads as a town, not a smear. Each
+  // block is surrounded by grass on all sides so terrain can later be aligned
+  // to it (woods/roads running up to the town edge).
+  function blockIsOpen(x, y, w, h) {
+    // require a 1-tile grass margin so towns never fuse with forest or water
+    for (let yy = y - 1; yy < y + h + 1; yy++) {
+      for (let xx = x - 1; xx < x + w + 1; xx++) {
+        if (xx < 3 || yy < 3 || xx >= width - 3 || yy >= height - 3) return false;
+        if (terrain[idx(xx, yy)] !== GRASS) return false;
+      }
+    }
+    return true;
+  }
+
+  // Buildings are impassable, so a town could seal off a 1-tile pocket of grass.
+  // Place the block, then prove the walkable area is still a single region; if
+  // it stranded anything, revert and try elsewhere.
+  function isImpassable(t) {
+    return t === WATER || t === BUILDING;
+  }  function strandedAnywhere() {
+    let start = -1;
+    let walkable = 0;
+    for (let i = 0; i < n; i++) {
+      if (!isImpassable(terrain[i])) {
+        walkable++;
+        if (start === -1) start = i;
+      }
+    }
+    if (start === -1) return true;
+    const seen = new Uint8Array(n);
+    const stack = [start];
+    seen[start] = 1;
+    let reached = 0;
+    while (stack.length > 0) {
+      const cell = stack.pop();
+      reached++;
+      const x = cell % width;
+      const y = Math.floor(cell / width);
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (!inBounds(nx, ny)) continue;
+        const ni = idx(nx, ny);
+        if (!isImpassable(terrain[ni]) && !seen[ni]) {
+          seen[ni] = 1;
+          stack.push(ni);
+        }
+      }
+    }
+    return reached !== walkable;
+  }
+
+  function placeCityBlock(maxCells) {
+    // Bias toward a 3x3 footprint: a 2x2 town reads as a stub, while up to 8
+    // cells of 3x3 reads as a district (the user's "metropolitan area").
+    const w = Math.random() < 0.7 ? 3 : 2;
+    const h = Math.random() < 0.7 ? 3 : 2;
+    for (let attempt = 0; attempt < 80; attempt++) {
+      const x = irand(4, width - w - 4);
+      const y = irand(4, height - h - 4);
+      if (!blockIsOpen(x, y, w, h)) continue;
+      // Fill in a shuffled order and stop at maxCells, so a 3x3 block with a
+      // cell budget of 6-8 produces an L-shaped town rather than a stamp.
+      const cells = [];
+      for (let yy = y; yy < y + h; yy++) {
+        for (let xx = x; xx < x + w; xx++) cells.push(idx(xx, yy));
+      }
+      for (let k = cells.length - 1; k > 0; k--) {
+        const j = Math.floor(Math.random() * (k + 1));
+        [cells[k], cells[j]] = [cells[j], cells[k]];
+      }
+      const placedCells = [];
+      for (const cell of cells) {
+        if (placedCells.length >= maxCells) break;
+        terrain[cell] = BUILDING;
+        placedCells.push(cell);
+      }
+      if (strandedAnywhere()) {
+        for (const cell of placedCells) terrain[cell] = GRASS;
+        continue;
+      }
+      return placedCells.length;
+    }
+    return 0;
+  }
+
+  for (let i = 0, count = irand(1, 3); i < count; i++) placeCityBlock(irand(5, 8));
+
+  if (process.env.COMPOSE_DEBUG) {
+    console.log(
+      `[compose] after cities: stranded=${strandedAnywhere()} buildings=${
+        Array.from(terrain).filter((t) => t === BUILDING).length
+      }`
+    );
+  }
+
   // --- 5. roads -----------------------------------------------------------
   const deckCells = new Uint8Array(n); // 1 horizontal deck, 2 vertical deck
   const strutCells = new Uint8Array(n); // 1 = underside struts (149) in water
@@ -218,8 +335,8 @@ function compose(width, height) {
     terrain[i] = ROAD;
   }
 
-  // Horizontal road: straight, full width, bridging the strait.
-  const roadY = irand(10, height - 10);
+  // Horizontal road: straight, full width, bridging the strait. roadY was chosen
+  // back in step 3b so the causeway and this road share the same row.
   for (let x = 0; x < width; x++) setRoad(x, roadY, "h");
 
   // Vertical road on the left landmass, with one horizontal step (two bends).
@@ -280,6 +397,12 @@ function compose(width, height) {
     return terrain[i] === WATER || deckCells[i] !== 0;
   }
 
+  function isLand(x, y) {
+    // Buildings are built on land, so they must not be mistaken for water by the
+    // coast autotile (a city adjacent to the strait still gets a proper bank).
+    return !isWater(x, y);
+  }
+
   function waterGid(i) {
     if (strutCells[i]) return R.bridges.strutHorizontal;
     const x = i % width;
@@ -289,10 +412,10 @@ function compose(width, height) {
     const W2 = isWater(x - 1, y);
     const E = isWater(x + 1, y);
     if (N && S && W2 && E) return W.fill;
-    const landN = !N;
-    const landS = !S;
-    const landW = !W2;
-    const landE = !E;
+    const landN = isLand(x, y - 1);
+    const landS = isLand(x, y + 1);
+    const landW = isLand(x - 1, y);
+    const landE = isLand(x + 1, y);
     if (landN && !landS && !landW && !landE) return C.edges.north;
     if (landS && !landN && !landW && !landE) return C.edges.south;
     if (landW && !landN && !landS && !landE) return C.edges.west;
@@ -350,6 +473,14 @@ function compose(width, height) {
       case ROAD:
         visual[i] = roadGid(i);
         break;
+      case BUILDING: {
+        // 27 is the generic city (income); 28/29 are used only for variety so
+        // the town does not read as one stamp repeated.
+        const r = Math.random();
+        visual[i] = r < 0.7 ? B.city : pick(B.cityVariants);
+        collisions[i] = 1;
+        break;
+      }
     }
   }
 
