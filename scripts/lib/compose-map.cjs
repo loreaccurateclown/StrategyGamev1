@@ -160,20 +160,38 @@ function compose(width, height) {
     }
   }
 
-  // --- 3b. reserve the crossing BEFORE anything connectivity-sensitive -----
-  // The strait splits the map in two, so it must be crossable before cities are
-  // placed: a city placed on an uncrossable map reports as "stranding" and gets
-  // reverted. The crossing is a 2-wide land causeway (which the horizontal road
-  // later runs over), not a bridge tile — a bridge is walkable anyway, and using
-  // land here keeps the connectivity picture honest at every stage.
-  const roadY = irand(10, height - 10);
-  const crossingHalfHeight = 1;
-  for (let y = roadY - crossingHalfHeight; y <= roadY + crossingHalfHeight; y++) {
-    if (y < 0 || y >= height) continue;
-    for (let x = straitMinX; x <= straitMaxX; x++) {
-      if (inBounds(x, y)) terrain[idx(x, y)] = GRASS;
-    }
+  // --- 3b. main roads, laid BEFORE anything connectivity-sensitive ---------
+  // The strait splits the map in two, so the crossing must exist before cities
+  // are placed (a city placed on an uncrossable map reports as "stranding" and
+  // gets reverted). The horizontal road is therefore laid now and bridges the
+  // strait properly, instead of carving a land causeway and hoping a road
+  // follows later. Road cells are walkable, so connectivity is honest either way.
+  const deckCells = new Uint8Array(n); // 1 horizontal deck, 2 vertical deck
+  const strutCells = new Uint8Array(n); // 1 = underside struts (149) in water
+
+  function setRoad(x, y, orientation) {
+    if (!inBounds(x, y)) return;
+    const i = idx(x, y);
+    if (terrain[i] === WATER) deckCells[i] = orientation === "h" ? 1 : 2;
+    terrain[i] = ROAD;
   }
+
+  // Horizontal road: straight, full width, bridging the strait.
+  const roadY = irand(10, height - 10);
+  for (let x = 0; x < width; x++) setRoad(x, roadY, "h");
+
+  // Vertical road on the left landmass, with one horizontal step (two bends).
+  const roadX = irand(5, Math.max(6, straitMinX - 6));
+  const stepDir = Math.random() < 0.5 ? -1 : 1;
+  const roadX2 = clamp(roadX + stepDir * irand(2, 4), 5, Math.max(6, straitMinX - 6));
+  const stepY = irand(10, height - 10);
+  for (let y = 0; y <= stepY; y++) setRoad(roadX, y, "v");
+  for (let x = Math.min(roadX, roadX2); x <= Math.max(roadX, roadX2); x++) setRoad(x, stepY, "h");
+  for (let y = stepY + 1; y < height; y++) setRoad(roadX2, y, "v");
+
+  // A cell that is guaranteed to be on the main road skeleton. District roads use
+  // it to decide whether they have actually joined the network.
+  const mainRoadSeed = idx(0, roadY);
 
   // --- 4. interior forest clumps + mountain clusters ----------------------
   function growClump(size, type) {
@@ -319,12 +337,16 @@ function compose(width, height) {
         for (const cell of placed) terrain[cell] = GRASS;
         continue;
       }
+      cityClusters.push(placed);
       return placed.length;
     }
     return 0;
   }
 
-  for (let i = 0, count = irand(1, 3); i < count; i++) placeCityBlock(irand(5, 8));
+  const cityClusters = [];
+  // More, denser districts so the map fills out; overlapping clusters merge into
+  // "big cities" naturally because each building just needs a grass cell.
+  for (let i = 0, count = irand(3, 6); i < count; i++) placeCityBlock(irand(5, 9));
 
   if (process.env.COMPOSE_DEBUG) {
     console.log(
@@ -334,32 +356,330 @@ function compose(width, height) {
     );
   }
 
-  // --- 5. roads -----------------------------------------------------------
-  const deckCells = new Uint8Array(n); // 1 horizontal deck, 2 vertical deck
-  const strutCells = new Uint8Array(n); // 1 = underside struts (149) in water
-
-  function setRoad(x, y, orientation) {
-    if (!inBounds(x, y)) return;
-    const i = idx(x, y);
-    if (terrain[i] === WATER) deckCells[i] = orientation === "h" ? 1 : 2;
-    terrain[i] = ROAD;
+  // --- 5. link each city district into the road network -------------------
+  // The main road skeleton was laid back in step 3b (so the strait was already
+  // crossable when cities were placed); this step adds the district roads.
+  // AWBW reference maps show roads as a NETWORK: a district gets a road that
+  // joins the nearest existing road (making a T-junction), and only a few roads
+  // run out to the map edge. So a city spur is routed to the closest road cell
+  // with an L-shaped stepped path - never sent hunting for an edge, which would
+  // slice the map into parallel strips.
+  function isRoadCell(x, y) {
+    return inBounds(x, y) && terrain[idx(x, y)] === ROAD;
   }
 
-  // Horizontal road: straight, full width, bridging the strait. roadY was chosen
-  // back in step 3b so the causeway and this road share the same row.
-  for (let x = 0; x < width; x++) setRoad(x, roadY, "h");
+  /** All road cells 4-connected to `start`, as a Set of cell indices. */
+  function roadComponent(start) {
+    const seen = new Set([start]);
+    const stack = [start];
+    while (stack.length > 0) {
+      const c = stack.pop();
+      const x = c % width;
+      const y = Math.floor(c / width);
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (!isRoadCell(nx, ny)) continue;
+        const ni = idx(nx, ny);
+        if (seen.has(ni)) continue;
+        seen.add(ni);
+        stack.push(ni);
+      }
+    }
+    return seen;
+  }
 
-  // Vertical road on the left landmass, with one horizontal step (two bends).
-  const roadX = irand(5, Math.max(6, straitMinX - 6));
-  const stepDir = Math.random() < 0.5 ? -1 : 1;
-  const roadX2 = clamp(roadX + stepDir * irand(2, 4), 5, Math.max(6, straitMinX - 6));
-  const stepY = irand(10, height - 10);
-  for (let y = 0; y <= stepY; y++) setRoad(roadX, y, "v");
-  for (let x = Math.min(roadX, roadX2); x <= Math.max(roadX, roadX2); x++) setRoad(x, stepY, "h");
-  for (let y = stepY + 1; y < height; y++) setRoad(roadX2, y, "v");
+  /** Routes an L-shaped (stepped) road from (sx,sy) to the nearest road cell. */
+  function connectPoint(sx, sy, exclude, maxDistance) {
+    const candidates = [];
+    for (let y = 1; y < height - 1; y++) {
+      for (let x = 1; x < width - 1; x++) {
+        if (!isRoadCell(x, y)) continue;
+        if (exclude && exclude.has(idx(x, y))) continue;
+        const d = Math.abs(x - sx) + Math.abs(y - sy);
+        if (maxDistance !== undefined && d > maxDistance) continue;
+        candidates.push([x, y, d]);
+      }
+    }
+    candidates.sort((a, b) => a[2] - b[2]);
+    // Try a generous number of targets: the nearest road cells are often the
+    // district's own ring (excluded) or lie behind the town, so a short candidate
+    // list leaves the ring orphaned.
+    for (const [tx, ty] of candidates.slice(0, 40)) {
+      const shapes = [];
+      // L: horizontal, then vertical.
+      {
+        const cells = [];
+        for (let x = Math.min(sx, tx); x <= Math.max(sx, tx); x++) cells.push([x, sy, "h"]);
+        for (let y = Math.min(sy, ty); y <= Math.max(sy, ty); y++) cells.push([tx, y, "v"]);
+        shapes.push(cells);
+      }
+      // L: vertical, then horizontal.
+      {
+        const cells = [];
+        for (let y = Math.min(sy, ty); y <= Math.max(sy, ty); y++) cells.push([sx, y, "v"]);
+        for (let x = Math.min(sx, tx); x <= Math.max(sx, tx); x++) cells.push([x, ty, "h"]);
+        shapes.push(cells);
+      }
+      // Z via a mid column, to dodge whatever blocks the direct L.
+      {
+        const mx = Math.round((sx + tx) / 2);
+        const cells = [];
+        for (let x = Math.min(sx, mx); x <= Math.max(sx, mx); x++) cells.push([x, sy, "h"]);
+        for (let y = Math.min(sy, ty); y <= Math.max(sy, ty); y++) cells.push([mx, y, "v"]);
+        for (let x = Math.min(mx, tx); x <= Math.max(mx, tx); x++) cells.push([x, ty, "h"]);
+        shapes.push(cells);
+      }
+      // Z via a mid row.
+      {
+        const my = Math.round((sy + ty) / 2);
+        const cells = [];
+        for (let y = Math.min(sy, my); y <= Math.max(sy, my); y++) cells.push([sx, y, "v"]);
+        for (let x = Math.min(sx, tx); x <= Math.max(sx, tx); x++) cells.push([x, my, "h"]);
+        for (let y = Math.min(my, ty); y <= Math.max(my, ty); y++) cells.push([tx, y, "v"]);
+        shapes.push(cells);
+      }
+      for (const cells of shapes) {
+        // Never tunnel through a building: it is impassable, so a road drawn over
+        // it would be a fake line through a solid object.
+        let hitsBuilding = false;
+        for (const [x, y] of cells) {
+          if (inBounds(x, y) && terrain[idx(x, y)] === BUILDING) {
+            hitsBuilding = true;
+            break;
+          }
+        }
+        if (hitsBuilding) continue;
+        for (const [x, y, orientation] of cells) setRoad(x, y, orientation);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Runs a road THROUGH a district (so buildings front onto it) and joins that
+   * road to the network. The corridor is the building-free row or column across
+   * the district with the most city frontage; using the corridor rather than a
+   * single spur is what makes a district read as a town on a road.
+   */
+  function routeDistrict(cluster) {
+    let minX = width;
+    let maxX = 0;
+    let minY = height;
+    let maxY = 0;
+    for (const cell of cluster) {
+      const x = cell % width;
+      const y = Math.floor(cell / width);
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+
+    // The main road is the row or column through the district with the most
+    // building frontage (the "longest road through the cluster"), not a box
+    // around it - a ring is an inefficient detour and its four-way corners read
+    // as unnatural roundabouts when only one side has buildings.
+    let main = null;
+    const consider = (kind, line, from, to, frontage, d) => {
+      if (frontage > 0 && (!main || frontage > main.frontage || (frontage === main.frontage && d < main.d))) {
+        main = { kind, line, from, to, frontage, d };
+      }
+    };
+
+    // Candidate main-road rows.
+    for (let y = minY - 1; y <= maxY + 1; y++) {
+      if (y < 1 || y >= height - 1) continue;
+      let usable = true;
+      let frontage = 0;
+      for (let x = minX - 1; x <= maxX + 1; x++) {
+        if (!inBounds(x, y)) continue;
+        const t = terrain[idx(x, y)];
+        if (t === BUILDING || t === WATER) {
+          usable = false;
+          break;
+        }
+        if (inBounds(x, y - 1) && terrain[idx(x, y - 1)] === BUILDING) frontage++;
+        if (inBounds(x, y + 1) && terrain[idx(x, y + 1)] === BUILDING) frontage++;
+      }
+      if (usable) consider("h", y, minX - 1, maxX + 1, frontage, Math.abs(y - (minY + maxY) / 2));
+    }
+    // Candidate main-road columns.
+    for (let x = minX - 1; x <= maxX + 1; x++) {
+      if (x < 1 || x >= width - 1) continue;
+      let usable = true;
+      let frontage = 0;
+      for (let y = minY - 1; y <= maxY + 1; y++) {
+        if (!inBounds(x, y)) continue;
+        const t = terrain[idx(x, y)];
+        if (t === BUILDING || t === WATER) {
+          usable = false;
+          break;
+        }
+        if (inBounds(x - 1, y) && terrain[idx(x - 1, y)] === BUILDING) frontage++;
+        if (inBounds(x + 1, y) && terrain[idx(x + 1, y)] === BUILDING) frontage++;
+      }
+      if (usable) consider("v", x, minY - 1, maxY + 1, frontage, Math.abs(x - (minX + maxX) / 2));
+    }
+    if (!main) return false;
+
+    // Lay the main road and remember it (owned) so the network connection skips
+    // the district's own road instead of "connecting" to itself.
+    const owned = new Set();
+    const ends = [];
+    if (main.kind === "h") {
+      for (let x = main.from; x <= main.to; x++) {
+        setRoad(x, main.line, "h");
+        owned.add(idx(x, main.line));
+      }
+      ends.push([main.from, main.line], [main.to, main.line]);
+    } else {
+      for (let y = main.from; y <= main.to; y++) {
+        setRoad(main.line, y, "v");
+        owned.add(idx(main.line, y));
+      }
+      ends.push([main.line, main.from], [main.line, main.to]);
+    }
+
+    // Connect the through-road to the network from both ends, so the district
+    // sits on a road that continues rather than dead-ending. If it already
+    // intersects the main skeleton (e.g. it crosses the horizontal road), skip.
+    const startCell = main.kind === "h" ? idx(main.from, main.line) : idx(main.line, main.from);
+    if (!roadComponent(startCell).has(mainRoadSeed)) {
+      for (const [ex, ey] of ends) connectPoint(ex, ey, owned, 18);
+    }
+
+    // Branch short spurs to cities off the main road. Skip a city that already
+    // fronts a road, or whose neighbour (within 2 tiles) already does - one road
+    // serves the whole pocket instead of a stub per building.
+    const frontsRoad = (bx, by) =>
+      isRoadCell(bx + 1, by) || isRoadCell(bx - 1, by) || isRoadCell(bx, by + 1) || isRoadCell(bx, by - 1);
+
+    for (const cell of cluster) {
+      const bx = cell % width;
+      const by = Math.floor(cell / width);
+      if (frontsRoad(bx, by)) continue;
+
+      let neighbourServed = false;
+      for (const other of cluster) {
+        if (other === cell) continue;
+        const ox = other % width;
+        const oy = Math.floor(other / width);
+        if (Math.max(Math.abs(bx - ox), Math.abs(by - oy)) <= 2 && frontsRoad(ox, oy)) {
+          neighbourServed = true;
+          break;
+        }
+      }
+      if (neighbourServed) continue;
+
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = bx + dx;
+        const ny = by + dy;
+        if (!inBounds(nx, ny)) continue;
+        const t = terrain[idx(nx, ny)];
+        if (t === GRASS || t === FOREST) {
+          connectPoint(nx, ny, undefined, 8);
+          break;
+        }
+      }
+    }
+    return true;
+  }
+
+  for (const cluster of cityClusters) routeDistrict(cluster);
+
+  // --- 5c. extend dead-end road tips -------------------------------------
+  // A district main road stops at the district box, which reads as a severed
+  // stub. Extend each dead-end tip forward:
+  //   - vertical roads run on to the map frame (north-south arteries), and
+  //   - any tip extends a short way to serve an unserved city or to join a road.
+  // A tip never extends into a cell that would touch >=2 other roads: that is
+  // what produced the "roundabout" four-way corners.
+  const frontsRoad = (bx, by) =>
+    isRoadCell(bx + 1, by) || isRoadCell(bx - 1, by) || isRoadCell(bx, by + 1) || isRoadCell(bx, by - 1);
+
+  function roadNeighbourCount(x, y) {
+    let c = 0;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      if (isRoadCell(x + dx, y + dy)) c++;
+    }
+    return c;
+  }
+
+  for (let pass = 0; pass < 24; pass++) {
+    let extended = false;
+
+    // Snapshot current tips (dead ends) so extending one does not re-scan itself.
+    const tips = [];
+    for (let y = 1; y < height - 1; y++) {
+      for (let x = 1; x < width - 1; x++) {
+        if (isRoadCell(x, y) && roadNeighbourCount(x, y) === 1) tips.push([x, y]);
+      }
+    }
+    if (tips.length === 0) break;
+
+    for (const [x, y] of tips) {
+      if (!isRoadCell(x, y) || roadNeighbourCount(x, y) !== 1) continue;
+      // Direction the tip points away from its one neighbour.
+      let dx = 0;
+      let dy = 0;
+      if (isRoadCell(x, y - 1)) dy = 1;
+      else if (isRoadCell(x, y + 1)) dy = -1;
+      else if (isRoadCell(x - 1, y)) dx = 1;
+      else if (isRoadCell(x + 1, y)) dx = -1;
+      if (dx === 0 && dy === 0) continue;
+
+      const vertical = dy !== 0;
+      const cap = vertical ? 48 : 8;
+
+      // First worthwhile cell ahead: a road to join, or an unserved city to reach
+      // (on-axis or one flank). Buildings ON the axis block (a road can't cut a
+      // city in half); buildings one flank off the axis are what we serve.
+      let goal = -1;
+      for (let step = 1; step <= cap; step++) {
+        const fx = x + dx * step;
+        const fy = y + dy * step;
+        if (!inBounds(fx, fy)) break;
+        const t = terrain[idx(fx, fy)];
+        if (t === WATER || t === BUILDING) break;
+        if (t === ROAD) {
+          goal = step;
+          break;
+        }
+        for (const [ox, oy] of [[0, 0], [dy, dx], [-dy, -dx]]) {
+          const cx = fx + ox;
+          const cy = fy + oy;
+          if (inBounds(cx, cy) && terrain[idx(cx, cy)] === BUILDING && !frontsRoad(cx, cy)) {
+            goal = step;
+            break;
+          }
+        }
+        if (goal !== -1) break;
+      }
+      // Vertical roads with no nearer target run on to the map frame.
+      if (goal === -1 && vertical) goal = cap;
+      if (goal === -1) continue;
+
+      for (let step = 1; step <= goal; step++) {
+        const nx = x + dx * step;
+        const ny = y + dy * step;
+        if (!inBounds(nx, ny)) break;
+        const t = terrain[idx(nx, ny)];
+        if (t === ROAD) break;
+        if (t === WATER || t === BUILDING) break;
+        if (roadNeighbourCount(nx, ny) >= 3) break; // would make a 4-way roundabout
+        setRoad(nx, ny, dx !== 0 ? "h" : "v");
+        extended = true;
+      }
+    }
+
+    if (!extended) break;
+  }
 
   // Struts: the water cell directly SOUTH of each horizontal deck gets the
-  // underside (149), so the bridge reads as a deck over a supported span.
+  // underside (149), so the bridge reads as a deck over a supported span. This
+  // runs after ALL roads so bridges created by city spurs get struts too.
   for (let i = 0; i < n; i++) {
     if (deckCells[i] !== 1) continue;
     const x = i % width;
@@ -447,7 +767,15 @@ function compose(width, height) {
     const W2 = inBounds(x - 1, y) && terrain[idx(x - 1, y)] === ROAD;
     const E = inBounds(x + 1, y) && terrain[idx(x + 1, y)] === ROAD;
     const cnt = N + S + W2 + E;
-    if (cnt <= 1) return N || S ? R.vertical : R.horizontal;
+    if (cnt === 0) return R.single;
+    if (cnt === 1) {
+      // A dead-end gets a proper cul-de-sac cap rather than a straight-through
+      // road tile that looks severed mid-block.
+      if (N) return R.deadEndTop;
+      if (S) return R.deadEndBottom;
+      if (E) return R.deadEndLeft; // closed on the left, open on the right
+      return R.deadEndRight; // closed on the right, open on the left
+    }
     if (cnt === 2) {
       if (N && S) return R.vertical;
       if (E && W2) return R.horizontal;
