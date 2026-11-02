@@ -89,7 +89,7 @@ Deck **131** on the road row with strut **149** in the water cell directly south
 | `TerrainType` | Grass 1, Forest 2, Water 3, Mountain 4, Road 5, Building 6 + `TERRAIN_DEFS` |
 | Seeded generator | `npm run map:generate` (`--seed`, `--width`, `--height`), deterministic per seed |
 | Composer rewrite | `scripts/lib/compose-map.cjs`, 4 layers + terrain sidecar |
-| `verifyMap` hardened | board size, tileset header, ground non-zero, gid→terrain drift (flip-masked), forbidden gids, collision == water‖building, occupancy band 32–42 %, connectivity = 1, all terrain types present |
+| `verifyMap` hardened | board size, tileset header, ground non-zero, gid→terrain drift (flip-masked), forbidden gids, collision == water‖building, occupancy band 32–42 %, connectivity = 1, **road connectivity = 1**, all terrain types present |
 | Map render tooling | `tools/render-map-preview.cjs` (full board), `tools/render-road-test.cjs`, `tools/render-tile-test.cjs` |
 | Structural QA tool | `tools/map-stats.cjs` — road components, city frontage, walkable components, bridge counts, verdict |
 
@@ -124,6 +124,29 @@ Deck **131** on the road row with strut **149** in the water cell directly south
 12. **`neverUseAsTerrain` gids**: 18, 26, 41, 42, 43, 44, 59, 60, 61, 62, 77, 78, 79, 119, 126, 143, 144 — UI arrows, flag animation frames, unconfirmed gid 26, and unit sprites. `verifyMap` fails if any appear in the terrain layer.
 13. **`.vscode/todos.json` is gitignored** (`.gitignore` has `.vscode/*` with only `extensions.json` excepted). The task tracker is local-only.
 14. **Board size is display-driven, not a tileset constraint.** Tiles verified at 16×16 (`kenney_tinybattle.tsx`: `tilewidth=16`, `spacing=1`, `columns=18`, 198 tiles; PNG 305×186). The old 37×37 cap came from `fitCameraToMap` clamping zoom inside a hardcoded 800×600 canvas. That approach is **retired**; do not resurrect fit-to-window zoom.
+
+---
+
+## `verifyMap`: road-connectivity assertion (added 2026-11-02)
+
+**What it does.** A second flood fill in [`scripts/generate-map.cjs`](../scripts/generate-map.cjs), over terrain `=== 5` (Road), asserting the road graph is **one connected component**. Fails with e.g.:
+
+```
+road network is split into 2 components (1 orphan fragment(s), largest 269/327)
+```
+
+The success line now also reports `roads: N component(s), largest/total road cells`.
+
+**Why it exists.** The original check only tested *walkable* connectivity (impassable = water + buildings). An orphan road cluster sits on walkable grass, so units could walk around it — the map was technically playable, but the roads visibly did not join up. Seed 577040 shipped a 58-cell orphan district in the SE corner and passed every guard. Frequency measured at **3 of 31 seeds** (42, 12, 577040), i.e. roughly one in ten.
+
+**Do not confuse the two checks.** They answer different questions:
+
+- *walkable* connectivity = "can a unit reach everywhere?" (gameplay correctness)
+- *road* connectivity = "does the road network hold together?" (map legibility / aesthetics)
+
+**If we ever want to change it back.** The assertion is self-contained in `verifyMap`; delete the block commented `// road connectivity: ...` (from `const isRoad = (t) => t === 5;` through the `problems.push` for orphan fragments) and drop the `roads:` fragment from the final `console.log`. Nothing else depends on it, and no generator behaviour changes — it is a **guard only**, not a repair pass.
+
+**Known alternative.** Rather than reverting, the better fix is to stop the orphans at the source: a district's connecting path can latch onto its own spur instead of the main network (the same self-connection bug class hit during the road work). Fixing that would let seeds 42/12/577040 generate cleanly instead of being rejected.
 
 ---
 

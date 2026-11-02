@@ -289,6 +289,46 @@ function verifyMap(map, composed) {
     problems.push(`walkable area is split into ${components} components (largest ${largest}/${walkable})`);
   }
 
+  // road connectivity: the road graph must be one piece. A district cut off from
+  // the network is still walkable across grass, so the check above cannot catch
+  // it - an orphan road fragment reads as a broken road on the map.
+  const isRoad = (t) => t === 5;
+  let roadCells = 0;
+  let roadComponents = 0;
+  let largestRoad = 0;
+  const roadSeen = new Uint8Array(total);
+  for (let i = 0; i < total; i++) if (isRoad(composed.terrain[i])) roadCells++;
+  for (let start = 0; start < total; start++) {
+    if (!isRoad(composed.terrain[start]) || roadSeen[start]) continue;
+    roadComponents++;
+    let size = 0;
+    const stack = [start];
+    roadSeen[start] = 1;
+    while (stack.length > 0) {
+      const cell = stack.pop();
+      size++;
+      const x = cell % mapWidth;
+      const y = (cell - x) / mapWidth;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= mapWidth || ny >= mapHeight) continue;
+        const ni = ny * mapWidth + nx;
+        if (isRoad(composed.terrain[ni]) && !roadSeen[ni]) {
+          roadSeen[ni] = 1;
+          stack.push(ni);
+        }
+      }
+    }
+    if (size > largestRoad) largestRoad = size;
+  }
+  if (roadCells > 0 && roadComponents !== 1) {
+    const orphans = roadComponents - 1;
+    problems.push(
+      `road network is split into ${roadComponents} components (${orphans} orphan fragment(s), largest ${largestRoad}/${roadCells})`
+    );
+  }
+
   const imagePath = path.join(generatedFolder, palette.tileset.image);
   if (!fs.existsSync(imagePath)) {
     problems.push(`tileset image was not copied to ${path.relative(REPO_ROOT, imagePath)}`);
@@ -302,7 +342,8 @@ function verifyMap(map, composed) {
     `Verified: ${map.width}x${map.height} @ ${map.tilewidth}px, ${map.layers.length} layers | ` +
       `occupancy: forest ${pct(2)}, mountain ${pct(4)}, water ${pct(3)}, road ${pct(5)}, ` +
       `building ${pct(6)}, grass ${pct(1)} | ` +
-      `connectivity: ${components} component(s), ${largest}/${walkable} walkable cells`
+      `connectivity: ${components} component(s), ${largest}/${walkable} walkable cells | ` +
+      `roads: ${roadComponents} component(s), ${largestRoad}/${roadCells} road cells`
   );
 }
 
