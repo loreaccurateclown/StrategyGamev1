@@ -87,6 +87,8 @@ Each phase has a canonical spec in its own file. This document gives the goal, t
 
 **Full spec:** see `phase_2.md`.
 
+**Deferred movement requirements (recorded 2026-11-04, not yet specified):** friendly pass-through, limited same-tile stacking for support units, and naval movement over water. All three are absorbed by the Phase 1 pathfinding contracts with **no signature change** (the terrain-cost and occupancy callbacks already take the unit context from the caller). Details: [`phase_1.md` → Deferred: future movement requirements](./phase_1.md#deferred-future-movement-requirements-not-implemented). Naval has one dependency outside the client: **water is fragmented on every generated board** — 12/12 seeds had 2–3 disconnected bodies — so the composer needs a water-connectivity rule before ships can be useful.
+
 ---
 
 ### Phase 3: Enemy AI & Polish (Days 6–9)
@@ -125,6 +127,7 @@ Originally "Tiled Integration & Tooling". The map is **not** hand-authored in th
 - Terrain variety (rivers, hills, ruins) with modifiers
 - Unit upgrades
 - Multiple unit types (air, artillery, recon)
+- Naval units (ships, dockyard output, amphibious APC) — needs the water-connectivity rule noted under Phase 2 first
 - Campaign mode with scripted objectives
 - *(Optional)* 8-directional movement with corner-cut rules
 

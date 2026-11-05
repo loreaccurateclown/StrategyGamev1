@@ -52,7 +52,7 @@ Sheet: `assets/import/kenney_tiny-battle/Tilemap/tilemap.png`, 18 columns,
 **Rendering test result:** the sheet's own bottom corners (22/23) produce odd
 pale patches and break the beach line. Building all four corners from **19 plus
 horizontal/vertical flips** gives a continuous sand ring and correct rounding —
-see `tools/tiles/coast-test-a.png` vs `coast-test-b.png`. Tiled/Phaser gids
+see `tools/previews/coast-test-a.png` vs `coast-test-b.png`. Tiled/Phaser gids
 carry flip flags, so this needs no extra art.
 
 ### Roads and bridges

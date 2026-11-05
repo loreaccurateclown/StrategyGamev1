@@ -25,7 +25,7 @@ Observed from the Field Training rips plus the campaign map (which is a world ma
 
 ## How the current generated 64×48 map diverges
 
-Reference render: `tools/map-preview.png`.
+Reference render: `tools/previews/map-preview.png`.
 
 | AW1 | Our output |
 |-----|------------|
@@ -71,7 +71,7 @@ Roads and bridges **are** in scope now — the sheet does have them, contrary to
 Build all four water corners from **gid 19 plus flip flags** (horizontal, vertical,
 both), with straights 20 (land north), 56 (land south), 37 (land west),
 39 (land east) and fill 38. The sheet's own bottom corners (22/23) carry stray
-land specks and visibly break the waterline — see `tools/tiles/coast-montage.png`
+land specks and visibly break the waterline — see `tools/previews/coast-montage.png`
 (green frames = correct stride and the flip approach; red frames = the classic
 spacing/stride bug for comparison).
 

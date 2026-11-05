@@ -24,6 +24,29 @@ Lessons learned while setting up this Phaser 4 + TypeScript project on Windows P
 - **`kenney_tinybattle_indiv.tsx` is broken** — its `image` paths point outside the project. Use `kenney_tinybattle.tsx` as the authority (16 px, spacing 1, margin 0, 18 columns, 198 tiles, 305×186 px).
 - **Road tiles DO exist** — the earlier "no road tile" conclusion was wrong. Confirmed set: horizontal 111, vertical 145, single 109, dead-ends 110/112/127/163, bends 128/130/164/166, tees 129/146/148/165, cross 147, bridge deck 131/167, strut 149. Authoritative table: [`tile_roles.md`](./tile_roles.md).
 
+## Vision models: a subjective instrument, not an authority
+
+Recorded 2026-11-05. This project owns the generator and the engine, so **the data is always available** — `level_01.terrain.json`, `verifyMap`, `tools/map-stats.cjs` and pixel diffs answer every factual question exactly and cannot confabulate. A vision model adds exactly one thing the data cannot: **what a human eyeball sees.** So ask it *"does this fit together?"*, never *"is this correct?"*.
+
+- **Ask what the intention was before grading CV output.** A map is not only its logic — it also has to hold up as a picture. The bridge is the worked example: the deck is drawn so the water reads as flowing freely underneath, and the strut in the water cell below is the only tell. A VLM reporting *"one continuous river"* is describing the **intended player perception** — the illusion working. Scoring that as a CV error is backwards; it was the single most successful answer it gave.
+- **Use it for:** does it read as one coherent place; is the water natural; are settlements convincing; is vegetation groves or noise; where is it barren; what is most visually repetitive. Subjective questions with no ground truth to contradict.
+- **Do not use it for:** counting, gids, coordinates, tile correctness, whether something "exists". Those go to the sidecar and the diff tools.
+- **Trust its aggregate judgement, distrust its attributions.** Measured on seed 1234: it called the central river *"too perfectly straight and uniform in width"* — **confirmed**, the channel is exactly 7 tiles wide on all 47 wet rows, sd 0.00, centroid sd 0.50. It is a perfect constant-width vertical band, and it was right that adding bends/tributaries is the single best visual improvement. But the same answer blamed *"isolated structures with no road connection"* (only **1 of 89** buildings is roadless, and it is top-left, not top-right) and *"bottom-left feels most unfinished"* (bottom-left is the **second most developed** quadrant at 12.5 %, ahead of both right-hand quadrants at 7.9 % / 8.1 %). The instinct was right; the locations were invented.
+- **Crop before asking structural questions** — ≤ 8 tiles across. At full-board scale a 1-tile feature is invisible: it could not see that the river is severed into two bodies by a single road crossing, which is exactly what the deck is designed to hide.
+- **Best model tried:** `qwen3.5-9b-...-heretic-neo-imatrix-max-mtp` (Q4_K_S, ~5.5 GB) — transcribed a 5×7 bitmap-font caption **exactly** (`WATER SOUTH 210`), spotted the bridge deck and strut on a 3× crop, and correctly answered "no red cars" with grounded evidence. It reasons heavily (300–3,200 tokens), so it is slow but careful.
+
+### Feeding images in: `tools/vision_input/`
+
+Images cannot be pasted into chat — the chat model accepts text only — so screenshots are dropped in a folder and referenced by path. Two subfolders, added 2026-11-05:
+
+- **`tools/vision_input/unread/`** — the drop zone. Save the capture here.
+- **`tools/vision_input/read/`** — moved here once it has been analysed, so the pair doubles as a record of what has already been looked at. An empty `unread/` means nothing is pending.
+
+Just point the agent at the folder; it discovers the loaded model at call time (never hardcodes an id) and picks the MIME type from the extension. No need to say which model is loaded.
+
+- **Captures are gitignored, and that needed a fix.** `.gitignore` only covered `tools/**/*.png`, but browser screenshots land as **`.jpg`** — one `git add .` away from being committed. `tools/**/*.jpg`, `.jpeg` and `.webp` are now ignored too.
+- **Check the capture dimensions, not the filename.** A Brave capture of the 2048×1536 preview came out **1311×570** — a wide, short band cropped on all sides. The filename carried the *source* size, not the capture's. A vision model correctly called it "tightly cropped on all sides", which was the one structural judgement it got right on that file.
+
 ## Phaser
 
 - **`createLayer` returns `TilemapLayer | TilemapGPULayer`.** Pass `gpu = false` to get the plain `TilemapLayer` and a defensible `as` narrow; the GPU variant is less flexible.

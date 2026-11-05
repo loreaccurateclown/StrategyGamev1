@@ -86,7 +86,7 @@ Runs Dijkstra from `start` and returns every tile reachable within `maxMovementP
 - **grid** — the 32×32 terrain grid (`number[][]`).- **start** — `GridPos` of the unit's current tile.
 - **maxMovementPoints** — total movement points available this turn (e.g. 6). `Infinity` means no limit (used by tests).
 - **getTerrainCost(tileIndex: number) → number** — given a numeric tile index from the grid, look up its definition in `TERRAIN_DEFS`. Return its `moveCost` only when the definition is passable and the cost is finite and nonnegative; otherwise return `Infinity`. Unknown indices also return `Infinity`. The pathfinder passes `grid[pos.y][pos.x]`, not `pos` itself. This keeps terrain values centralized and ensures invalid costs are never used by Dijkstra.
-- **isOccupied(pos) → boolean** — true if another unit currently occupies the tile. The pathfinder must **not** call `isOccupied(start)` — the moving unit occupies its own tile and must not block itself. All other tiles are checked.
+- **isOccupied(pos) → boolean** — true if another unit currently occupies the tile. The pathfinder must **not** call `isOccupied(start)` — the moving unit occupies its own tile and must not block itself. All other tiles are checked. When friendly pass-through is added it means *"blocks movement"* (enemies only), while *"may I stop here"* becomes a caller-side filter — see [Deferred: future movement requirements](#deferred-future-movement-requirements-not-implemented).
 
 The returned map **includes the start tile** with `cost: 0` and `parent: null`. All other entries have `cost > 0`. Callers may rely on `reachable.get(tileKey(start))` being defined.
 
@@ -97,6 +97,81 @@ Returns the ordered list of tiles from `start` to `target` by walking `parent` p
 ### Enter-cost convention
 
 The cost stored on each tile is the cost to **enter** it (not leave it). A path's total cost sums every tile *except* the start, so moving onto a forest costs 2 per step while grass costs 1.
+
+---
+
+## Deferred: future movement requirements (not implemented)
+
+Recorded 2026-11-04 from the owner's design notes. **Nothing here is built in Phase 1.** It is written down because the three contracts above were checked against it, and all three turn out to absorb these requirements **without a signature change** — provided the semantics below are respected. Breaking one of those semantics is what would force a rewrite.
+
+They land when per-unit state is defined: **Phase 2.1** (`TurnState`: `currentPlayer`, `phase`, remaining MP per unit) and **Phase 2.2** (the move → attack flow, which is where destination legality first matters). `phase_2.md` does not exist yet, so this section is the only written record.
+
+### 1. Units pass through friendly units, but cannot stop on them
+
+Enemies still block. Friendlies must not, or the board becomes a sliding-puzzle traffic jam and the AI becomes much harder to write.
+
+`isOccupied` currently conflates two different questions — *may I enter this tile* and *may I end my turn here*. They must split, but **not in the pathfinder**:
+
+| question | where it lives |
+|----------|----------------|
+| may I **move through**? | `isOccupied`, passed by the caller → true for **enemies only** once teams exist |
+| may I **stop** here? | a caller-side filter over the returned map, not a pathfinder rule |
+
+```ts
+const reachable = getReachableTiles(grid, start, mp, costFn, enemyBlocksMovement);
+const destinations = [...reachable.values()].filter(t => !anyUnitAt(t.pos));
+```
+
+Consequences to keep in mind:
+
+- `reconstructPath` may legitimately return a path whose **intermediate** tiles are friendly-occupied.
+- A unit hemmed in by friendlies is still selectable and can end its turn in place — the result still contains the start tile.
+- **Do not** write a test asserting that a friendly on a tile removes that tile from `reachable`. That assertion is correct for enemies and wrong for friendlies. Today's `"does not traverse occupied tiles"` test stays valid because its predicate stands in for enemy units.
+- `isOccupied` keeps its name and its type. Only the predicate the caller supplies changes.
+
+### 2. Limited same-tile stacking
+
+Some support units (the motivating example: a long-range air-defense unit that does one job well but otherwise occupies a tile for nothing) may share a tile with another unit. Graphically this does not change: the unit sprite stays the same.
+
+The consequence is structural: **"one unit per tile" is not an invariant.** So:
+
+- `isOccupied(pos) → boolean` is eventually insufficient; the real query is `occupantsAt(pos) → Unit[]`.
+- Unit storage should be `Map<tileKey, Unit[]>` (or a unit list plus a spatial index), not `Map<tileKey, Unit>`.
+- Nothing exists yet, so the cost today is **zero** — the only requirement is not to document one-per-tile as permanent.
+- Stacks still count as blockable for enemies, and still count as "occupied" for the destination filter in item 1.
+
+### 3. Naval units move over water (and amphibious units over both)
+
+`TERRAIN_DEFS[t].moveCost` is **one scalar per terrain**, so it cannot express "water costs 1 for a ship and ∞ for a tank". That is fine, because `getTerrainCost` is a *callback*: the caller closes over the moving unit's movement class.
+
+```ts
+getReachableTiles(grid, start, mp, (t) => costFor(unitClass, t), enemyBlocksMovement);
+```
+
+- The pathfinder never learns that unit types exist. **Do not** add a `unitType` parameter to it later — that would couple pathfinding to the unit taxonomy for no gain.
+- The data that eventually arrives is a **movement-class × terrain** matrix (plus per-type overrides), *not* a change to `TERRAIN_DEFS`. `TERRAIN_DEFS` stays the ground-unit baseline and the map generator keeps validating against it.
+- An amphibious APC is just another class with cost 1 on both land and water.
+- Water is still `Infinity` for ground units, so `verifyMap`'s land-connectivity assertion is unaffected.
+
+**Blocker, and it is a map-generator problem rather than a pathfinding one.** Water on every generated board is *fragmented*, so a ship would be confined to the lake it spawned in. Measured on the default board and 11 more seeds (2026-11-04):
+
+| seed | water cells | bodies | sizes |
+|------|------------|--------|-------|
+| 1234 | 329 | 2 | 210, 119 |
+| 7 | 381 | 2 | 209, 172 |
+| 99 | 503 | 2 | 286, 217 |
+| 2026 | 493 | 2 | 363, 130 |
+| 55 | 316 | **3** | 133, 94, 89 |
+
+**12/12 boards have 2–3 disconnected water bodies** (largest single body 86–363 cells). Land connectivity is already asserted by `verifyMap`; **water connectivity is not**. Before naval units ship, the composer needs either one connected sea or an explicit rule: assert water components in `verifyMap`, and require naval spawns/deployments to use the largest body.
+
+### Verdict
+
+| requirement | change to `getReachableTiles`? | change needed today? |
+|-------------|------------------------------|----------------------|
+| Friendly pass-through | none — caller supplies enemy-only `isOccupied` + filters destinations | no; only keep the *movement* semantics in the doc comment |
+| Same-tile stacking | none — becomes `occupantsAt` at the call site | no; just never document one-per-tile as permanent |
+| Naval / amphibious | none — caller closes over movement class | no; generator needs a water-connectivity rule, tracked separately |
 
 ---
 

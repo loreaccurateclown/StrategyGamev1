@@ -29,3 +29,9 @@ build
 # Advance Wars map rips used only as a local style reference)
 tools/**/*.png
 tools/**/*.txt
+# Screenshots saved for the vision model (tools/vision_input/read|unread). PNG is
+# already covered above, but browser captures land as .jpg and would otherwise be
+# committed the moment someone ran `git add .`.
+tools/**/*.jpg
+tools/**/*.jpeg
+tools/**/*.webp
