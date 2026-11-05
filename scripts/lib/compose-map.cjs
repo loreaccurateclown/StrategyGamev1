@@ -20,6 +20,7 @@
  */
 
 const palette = require("../../assets/generator/palette.json");
+const { shoreGid } = require("./shore-mask.cjs");
 
 const GRASS = 1;
 const FOREST = 2;
@@ -214,9 +215,10 @@ function compose(width, height, options = {}) {
     }
   }
 
-  // Tributaries: short spurs off the channel that taper to one tile and die
-  // inside the land. They add fine structure without creating a second barrier
-  // — a spur that reached the map edge would seal a pocket behind it.
+  // Tributaries: short spurs off the channel that narrow from three tiles to two
+  // and die inside the land. They add fine structure without creating a second
+  // barrier — a spur that reached the map edge would seal a pocket behind it.
+  // Two tiles is the minimum: see the funnel note below.
   if (waterStyle === "river") {
     for (let t = 0, count = irand(1, 2); t < count; t++) {
       const y0 = irand(5, height - 6);
@@ -232,13 +234,17 @@ function compose(width, height, options = {}) {
         if (dir < 0) break;
       }
       if (mouth < 0) continue;
-      // A funnel: three tiles tall at the mouth, then two, then one. Every column
-      // overlaps its neighbour, so the spur cannot float free.
+      // A funnel: three tiles tall at the mouth, then two for the rest of the run.
+      // It deliberately never narrows to a single tile. A 1-tall shaft has land
+      // directly above AND below, and the sheet has no bank art for that pair —
+      // flip flags mirror, they cannot rotate the vertical channel tile — so such
+      // a cell has no shore and renders as a bare blue strip in the grass. At two
+      // tiles tall every cell lands on a corner or an edge tile instead.
       for (let step = 1; step <= length; step++) {
         const x = mouth + dir * step;
         if (x < 3 || x > width - 4) break;
         const from = step === 1 ? -1 : 0;
-        const to = step === 1 ? 1 : step === 2 ? 1 : 0;
+        const to = 1;
         for (let k = from; k <= to; k++) {
           const yy = y0 + k;
           if (inBounds(x, yy)) terrain[idx(x, yy)] = WATER;
@@ -246,6 +252,7 @@ function compose(width, height, options = {}) {
       }
     }
   }
+
 
   // A spur near a sharp bend can curl back and pinch a pocket of land off against
   // the channel. This runs before any road exists, so there are exactly two
@@ -282,6 +289,33 @@ function compose(width, height, options = {}) {
     for (let i = 0; i < n; i++) {
       if (terrain[i] !== WATER && !reached[i]) terrain[i] = WATER;
     }
+  }
+
+  // One-tile-tall water fins. Where the meander's width peaks, the outermost
+  // carved cell has land directly above AND below - a 1-tall sliver. The sheet
+  // has no bank art for that pair (flip flags mirror, they cannot rotate the
+  // vertical channel tile), so such a cell can only be approximated, and it reads
+  // as water bleeding into the grass. Grow the fin by one row instead: every cell
+  // then lands on an edge or a corner tile. Growing water is safe for player
+  // movement - it can never disconnect the water region - and verifyMap still
+  // guards land connectivity. Measured 1.15 fin cells per map before this.
+  // Each pass can expose a new fin one row up, so this iterates to convergence.
+  // Every pass strictly converts land to water, so it terminates.
+  for (let pass = 0; pass < 64; pass++) {
+    const fins = [];
+    for (let y = 1; y < height - 1; y++) {
+      for (let x = 0; x < width; x++) {
+        if (terrain[idx(x, y)] !== WATER) continue;
+        if (terrain[idx(x, y - 1)] === WATER) continue; // already two tiles tall
+        if (terrain[idx(x, y + 1)] === WATER) continue;
+        if (x > 0 && terrain[idx(x - 1, y)] !== WATER) continue; // needs open water either side
+        if (x < width - 1 && terrain[idx(x + 1, y)] !== WATER) continue;
+        fins.push([x, y]);
+      }
+    }
+    if (fins.length === 0) break;
+    if (process.env.SHORE_DEBUG) console.error("  pass " + pass + ": " + fins.length + " fin cell(s)");
+    for (const [x, y] of fins) terrain[idx(x, y - 1)] = WATER;
   }
 
   // Extents of the finished water region, used to keep the vertical road on the
@@ -993,26 +1027,26 @@ function compose(width, height, options = {}) {
 
   function waterGid(i) {
     if (strutCells[i]) return R.bridges.strutHorizontal;
+    // The 16-case shoreline table lives in shore-mask.cjs so the composer and the
+    // mask preview tool cannot drift apart.
     const x = i % width;
     const y = Math.floor(i / width);
-    const N = isWater(x, y - 1);
-    const S = isWater(x, y + 1);
-    const W2 = isWater(x - 1, y);
-    const E = isWater(x + 1, y);
-    if (N && S && W2 && E) return W.fill;
-    const landN = isLand(x, y - 1);
-    const landS = isLand(x, y + 1);
-    const landW = isLand(x - 1, y);
-    const landE = isLand(x + 1, y);
-    if (landN && !landS && !landW && !landE) return C.edges.north;
-    if (landS && !landN && !landW && !landE) return C.edges.south;
-    if (landW && !landN && !landS && !landE) return C.edges.west;
-    if (landE && !landN && !landS && !landW) return C.edges.east;
-    if (landN && landW && !landS && !landE) return C.corner;
-    if (landN && landE && !landS && !landW) return C.corner | FLIP_H;
-    if (landS && landW && !landN && !landE) return C.corner | FLIP_V;
-    if (landS && landE && !landN && !landW) return C.corner | FLIP_H | FLIP_V;
-    return W.fill;
+    return shoreGid(
+      {
+        n: isLand(x, y - 1),
+        s: isLand(x, y + 1),
+        w: isLand(x - 1, y),
+        e: isLand(x + 1, y),
+      },
+      // Diagonals resolve the concave (inner corner) cases, which the orthogonal
+      // mask cannot express: water with land touching only corner-to-corner.
+      {
+        nw: isLand(x - 1, y - 1),
+        ne: isLand(x + 1, y - 1),
+        sw: isLand(x - 1, y + 1),
+        se: isLand(x + 1, y + 1),
+      },
+    );
   }
 
   function roadGid(i) {
