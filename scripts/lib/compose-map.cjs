@@ -4,9 +4,12 @@
  * Composition (deterministic, driven by the seeded Math.random):
  *   1. an irregular framing forest band with openings
  *   2. mountain accents clustered inside the band
- *   3. ONE localized water region — a vertical strait that splits the map into
- *      two landmasses, creating a chokepoint (the AW "land map with one water
- *      area" pattern; it can reach ~14% of the board)
+ *   3. ONE localized water region spanning the full height, splitting the map
+ *      into two landmasses (the AW "land map with one water area" pattern).
+ *      Two looks, chosen per seed or forced with --water:
+ *        strait — a straight constant-width canal: clean engineered chokepoint
+ *        river  — a meandering channel of varying width, optionally with a
+ *                 pool and short tapering tributaries (the default, 2:1)
  *   4. forest clumps and mountain clusters scattered through the interior
  *   4b. metropolitan city blocks (BUILDING terrain) in the open interior
  *   5. a horizontal road bridging the strait, and a vertical road (with one
@@ -48,7 +51,7 @@ function clamp(v, lo, hi) {
   return v < lo ? lo : v > hi ? hi : v;
 }
 
-function compose(width, height) {
+function compose(width, height, options = {}) {
   const n = width * height;
   const terrain = new Int8Array(n).fill(GRASS);
   const band = new Uint8Array(n);
@@ -129,61 +132,201 @@ function compose(width, height) {
     }
   }
 
-  // --- 3. the strait (single localized water region) ----------------------
-  // A vertical water band, jittered per row, spanning the full height so it
-  // splits the map into two landmasses. Roads will bridge it.
-  const straitCx = irand(Math.floor(width * 0.38), Math.floor(width * 0.62));
-  const straitBase = irand(5, 8);
-  const rowC = new Float32Array(height);
-  const rowW = new Float32Array(height);
-  let c = straitCx;
-  let w = straitBase / 2;
-  for (let y = 0; y < height; y++) {
-    if (y > 2 && y < height - 3) {
-      if (Math.random() < 0.14) c += Math.random() < 0.5 ? -1 : 1;
-      if (Math.random() < 0.1) w += Math.random() < 0.5 ? -0.5 : 0.5;
-      c = clamp(c, straitCx - 3, straitCx + 3);
-      w = clamp(w, straitBase / 2 - 1, straitBase / 2 + 1.5);
-    }
-    rowC[y] = c;
-    rowW[y] = w;
+  // --- 3. the water region -------------------------------------------------
+  // Both looks share one invariant: the water spans the full height, so the
+  // board is split into two landmasses and the horizontal road below is a real
+  // chokepoint. Which look a seed gets is drawn here (or forced by --water).
+  //
+  //   strait - a straight, constant-width canal. Deliberately artificial: it
+  //            reads as an engineered cut and is the cleanest chokepoint.
+  //   river  - a meandering channel whose width breathes along its course,
+  //            optionally widening into a pool and throwing off short
+  //            tributaries that taper and die inside the land.
+  //
+  // The centreline is clamped so the water never touches column 0 or width-1:
+  // both banks always exist, so the split stays a split.
+  const WATER_STYLES = ["strait", "river", "river"];
+  const requested = options.waterStyle;
+  if (requested !== undefined && requested !== "auto" && !WATER_STYLES.includes(requested)) {
+    throw new Error(
+      `unknown waterStyle "${requested}" (expected auto, ${WATER_STYLES.filter((s, i, a) => a.indexOf(s) === i).join(", ")})`,
+    );
   }
-  let straitMinX = width;
-  let straitMaxX = 0;
+  const waterStyle =
+    requested === undefined || requested === "auto" ? pick(WATER_STYLES) : requested;
+
+  const rowC = new Float32Array(height);
+  const rowHalf = new Float32Array(height);
+  // A smooth sum of sines reads as a curve; a clamped per-row random walk reads
+  // as a ragged edge. t runs 0..1 from the top of the board to the bottom.
+  const wave = (t, amp, freq, phase) => amp * Math.sin(2 * Math.PI * freq * t + phase);
+
+  if (waterStyle === "strait") {
+    // Constant centre, constant width. The absence of variance is the point:
+    // this is the look that makes a canal read as a deliberate crossing.
+    const cx = irand(Math.floor(width * 0.4), Math.floor(width * 0.6));
+    const waterWidth = 2 * irand(2, 3) + 1; // 5 or 7, odd so it stays centred
+    for (let y = 0; y < height; y++) {
+      rowC[y] = cx;
+      rowHalf[y] = (waterWidth - 1) / 2;
+    }
+  } else {
+    const cx0 = irand(Math.floor(width * 0.44), Math.floor(width * 0.56));
+    // Two octaves of drift: a broad bend plus a smaller kink, so the banks
+    // curve instead of stepping one tile at a time.
+    const bendAmp = 4 + Math.random() * 6;
+    const bendFreq = pick([1, 1, 2]);
+    const bendPhase = Math.random() * Math.PI * 2;
+    const kinkAmp = 0.8 + Math.random() * 2.2;
+    const kinkFreq = 3 + irand(0, 2);
+    const kinkPhase = Math.random() * Math.PI * 2;
+    // Half-width breathes along the course, and ~60% of rivers also open into
+    // a pool somewhere, which is what sells it as a body of water.
+    const halfBase = 2.2 + Math.random() * 1.8;
+    const halfSwing = 0.25 + Math.random() * 0.25;
+    const widthFreq = 2 + irand(0, 2);
+    const widthPhase = Math.random() * Math.PI * 2;
+    const hasPool = Math.random() < 0.6;
+    const poolY = (0.2 + Math.random() * 0.6) * height;
+    const poolAmp = 2 + Math.random() * 3;
+    const poolSigma = 2 + Math.random() * 2.5;
+
+    for (let y = 0; y < height; y++) {
+      const t = y / height;
+      const drift =
+        wave(t, bendAmp, bendFreq, bendPhase) + wave(t, kinkAmp, kinkFreq, kinkPhase);
+      let half = halfBase * (1 + halfSwing * wave(t, 1, widthFreq, widthPhase));
+      if (hasPool) {
+        const d = y - poolY;
+        half += poolAmp * Math.exp(-(d * d) / (2 * poolSigma * poolSigma));
+      }
+      half = clamp(half, 1.5, 6);
+      rowC[y] = clamp(cx0 + drift, 3 + half, width - 4 - half);
+      rowHalf[y] = half;
+    }
+  }
+
   for (let y = 0; y < height; y++) {
-    const lo = Math.floor(rowC[y] - rowW[y]);
-    const hi = Math.ceil(rowC[y] + rowW[y]);
-    if (lo < straitMinX) straitMinX = lo;
-    if (hi > straitMaxX) straitMaxX = hi;
+    const lo = Math.round(rowC[y] - rowHalf[y]);
+    const hi = Math.round(rowC[y] + rowHalf[y]);
     for (let x = lo; x <= hi; x++) {
       if (inBounds(x, y)) terrain[idx(x, y)] = WATER;
     }
   }
 
+  // Tributaries: short spurs off the channel that taper to one tile and die
+  // inside the land. They add fine structure without creating a second barrier
+  // — a spur that reached the map edge would seal a pocket behind it.
+  if (waterStyle === "river") {
+    for (let t = 0, count = irand(1, 2); t < count; t++) {
+      const y0 = irand(5, height - 6);
+      const dir = Math.random() < 0.5 ? -1 : 1;
+      const length = irand(4, 8);
+      // Start at the bank the terrain actually has on this row. A pool makes the
+      // carved channel wider than the analytic curve predicts, and a spur that
+      // begins inside the channel reads as a notch rather than an inlet.
+      let mouth = -1;
+      for (let x = 0; x < width; x++) {
+        if (terrain[idx(x, y0)] !== WATER) continue;
+        mouth = x;
+        if (dir < 0) break;
+      }
+      if (mouth < 0) continue;
+      // A funnel: three tiles tall at the mouth, then two, then one. Every column
+      // overlaps its neighbour, so the spur cannot float free.
+      for (let step = 1; step <= length; step++) {
+        const x = mouth + dir * step;
+        if (x < 3 || x > width - 4) break;
+        const from = step === 1 ? -1 : 0;
+        const to = step === 1 ? 1 : step === 2 ? 1 : 0;
+        for (let k = from; k <= to; k++) {
+          const yy = y0 + k;
+          if (inBounds(x, yy)) terrain[idx(x, yy)] = WATER;
+        }
+      }
+    }
+  }
+
+  // A spur near a sharp bend can curl back and pinch a pocket of land off against
+  // the channel. This runs before any road exists, so there are exactly two
+  // landmasses and each one touches a map edge: anything not reachable from the
+  // left or right edge is such a pocket, and it becomes water. Without this a
+  // seed can leave a 2-cell island that verifyMap rejects.
+  {
+    const reached = new Uint8Array(n);
+    const stack = [];
+    for (let y = 0; y < height; y++) {
+      for (const x of [0, width - 1]) {
+        const i = idx(x, y);
+        if (terrain[i] !== WATER && !reached[i]) {
+          reached[i] = 1;
+          stack.push(i);
+        }
+      }
+    }
+    while (stack.length > 0) {
+      const cell = stack.pop();
+      const x = cell % width;
+      const y = (cell - x) / width;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (!inBounds(nx, ny)) continue;
+        const ni = idx(nx, ny);
+        if (!reached[ni] && terrain[ni] !== WATER) {
+          reached[ni] = 1;
+          stack.push(ni);
+        }
+      }
+    }
+    for (let i = 0; i < n; i++) {
+      if (terrain[i] !== WATER && !reached[i]) terrain[i] = WATER;
+    }
+  }
+
+  // Extents of the finished water region, used to keep the vertical road on the
+  // left landmass. Measured after the tributaries so a spur can't be missed.
+  let waterMinX = width;
+  let waterMaxX = -1;
+  for (let i = 0; i < n; i++) {
+    if (terrain[i] !== WATER) continue;
+    const x = i % width;
+    if (x < waterMinX) waterMinX = x;
+    if (x > waterMaxX) waterMaxX = x;
+  }
+
   // --- 3b. main roads, laid BEFORE anything connectivity-sensitive ---------
-  // The strait splits the map in two, so the crossing must exist before cities
+  // The water splits the map in two, so the crossing must exist before cities
   // are placed (a city placed on an uncrossable map reports as "stranding" and
   // gets reverted). The horizontal road is therefore laid now and bridges the
-  // strait properly, instead of carving a land causeway and hoping a road
+  // channel properly, instead of carving a land causeway and hoping a road
   // follows later. Road cells are walkable, so connectivity is honest either way.
   const deckCells = new Uint8Array(n); // 1 horizontal deck, 2 vertical deck
   const strutCells = new Uint8Array(n); // 1 = underside struts (149) in water
 
-  function setRoad(x, y, orientation) {
+  function setRoad(x, y, orientation, allowBridge = false) {
     if (!inBounds(x, y)) return;
     const i = idx(x, y);
-    if (terrain[i] === WATER) deckCells[i] = orientation === "h" ? 1 : 2;
+    if (terrain[i] === WATER) {
+      // Only the main crossing may build over the channel. A district road is
+      // refused: a second bridge would turn one chokepoint into two and split
+      // the water into three bodies.
+      if (!allowBridge) return;
+      deckCells[i] = orientation === "h" ? 1 : 2;
+    }
     terrain[i] = ROAD;
   }
 
-  // Horizontal road: straight, full width, bridging the strait.
+  // Horizontal road: straight, full width, bridging the channel. This is the
+  // only road allowed to build over water.
   const roadY = irand(10, height - 10);
-  for (let x = 0; x < width; x++) setRoad(x, roadY, "h");
+  for (let x = 0; x < width; x++) setRoad(x, roadY, "h", true);
 
   // Vertical road on the left landmass, with one horizontal step (two bends).
-  const roadX = irand(5, Math.max(6, straitMinX - 6));
+  // `waterMinX` is the leftmost water column, so this stays clear of the channel.
+  const roadX = irand(5, Math.max(6, waterMinX - 6));
   const stepDir = Math.random() < 0.5 ? -1 : 1;
-  const roadX2 = clamp(roadX + stepDir * irand(2, 4), 5, Math.max(6, straitMinX - 6));
+  const roadX2 = clamp(roadX + stepDir * irand(2, 4), 5, Math.max(6, waterMinX - 6));
   const stepY = irand(10, height - 10);
   for (let y = 0; y <= stepY; y++) setRoad(roadX, y, "v");
   for (let x = Math.min(roadX, roadX2); x <= Math.max(roadX, roadX2); x++) setRoad(x, stepY, "h");
@@ -464,7 +607,16 @@ function compose(width, height) {
         // is the "roundabout" the map already has enough of).
         let bad = false;
         for (const [x, y] of cells) {
-          if (inBounds(x, y) && (terrain[idx(x, y)] === BUILDING || formsBlock(x, y))) {
+          // Never tunnel through a building (a road drawn over it would be a fake
+          // line through a solid object), never route across water (that would
+          // build a bridge nobody asked for), and never complete a 2x2 road block
+          // (that is the "roundabout" the map already has enough of).
+          if (
+            inBounds(x, y) &&
+            (terrain[idx(x, y)] === BUILDING ||
+              terrain[idx(x, y)] === WATER ||
+              formsBlock(x, y))
+          ) {
             bad = true;
             break;
           }
@@ -608,6 +760,38 @@ function compose(width, height) {
   }
 
   for (const cluster of cityClusters) routeDistrict(cluster);
+
+  // --- 5b2. prune road fragments that never joined the network -------------
+  // A district on the far side of the channel can no longer tunnel across it, so
+  // its through-road sometimes ends up isolated. An orphan fragment reads as a
+  // broken road, so clear every component that does not contain the main road
+  // back to grass. This runs BEFORE the extension and side-road passes below, so
+  // they still get a chance to reconnect the district over land.
+  {
+    const inNetwork = new Uint8Array(n);
+    if (terrain[mainRoadSeed] === ROAD) {
+      const stack = [mainRoadSeed];
+      inNetwork[mainRoadSeed] = 1;
+      while (stack.length > 0) {
+        const cell = stack.pop();
+        const x = cell % width;
+        const y = (cell - x) / width;
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const nx = x + dx;
+          const ny = y + dy;
+          if (!inBounds(nx, ny)) continue;
+          const ni = idx(nx, ny);
+          if (!inNetwork[ni] && terrain[ni] === ROAD) {
+            inNetwork[ni] = 1;
+            stack.push(ni);
+          }
+        }
+      }
+      for (let i = 0; i < n; i++) {
+        if (terrain[i] === ROAD && !inNetwork[i]) terrain[i] = GRASS;
+      }
+    }
+  }
 
   // --- 5c. extend dead-end road tips -------------------------------------
   // A district main road stops at the district box, which reads as a severed
@@ -895,7 +1079,7 @@ function compose(width, height) {
     }
   }
 
-  return { width, height, terrain, visual, variations, collisions };
+  return { width, height, terrain, visual, variations, collisions, waterStyle, waterMinX, waterMaxX };
 }
 
 module.exports = { compose };

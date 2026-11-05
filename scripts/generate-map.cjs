@@ -9,6 +9,7 @@
  *
  * Usage:
  *   node scripts/generate-map.cjs [--seed 1234] [--width 64] [--height 48]
+ *   node scripts/generate-map.cjs --water river     # force the water look
  *   npm run map:generate -- --seed 1234
  */
 const path = require("node:path");
@@ -63,6 +64,12 @@ const args = parseArgs(process.argv.slice(2));
 const seed = toPositiveInt(args.seed, DEFAULT_SEED, "seed");
 const mapWidth = toPositiveInt(args.width, DEFAULT_MAP_WIDTH, "width");
 const mapHeight = toPositiveInt(args.height, DEFAULT_MAP_HEIGHT, "height");
+
+const WATER_STYLES = ["auto", "strait", "river"];
+const waterStyle = args.water ?? "auto";
+if (!WATER_STYLES.includes(waterStyle)) {
+  throw new Error(`--water must be one of ${WATER_STYLES.join(", ")}, got "${waterStyle}"`);
+}
 
 const generatedFolder = path.join(REPO_ROOT, "public", "assets", "maps");
 
@@ -128,7 +135,7 @@ function main() {
       `Generating ${mapWidth}x${mapHeight} map "${MAP_NAME}" at ${palette.tileset.tileSize}px (seed ${seed})`
     );
 
-    const composed = compose(mapWidth, mapHeight);
+    const composed = compose(mapWidth, mapHeight, { waterStyle });
     const map = buildMap(composed.visual, composed.variations, composed.collisions);
 
     verifyMap(map, composed);
@@ -340,6 +347,7 @@ function verifyMap(map, composed) {
 
   console.log(
     `Verified: ${map.width}x${map.height} @ ${map.tilewidth}px, ${map.layers.length} layers | ` +
+      `water: ${composed.waterStyle} (cols ${composed.waterMinX}..${composed.waterMaxX}) | ` +
       `occupancy: forest ${pct(2)}, mountain ${pct(4)}, water ${pct(3)}, road ${pct(5)}, ` +
       `building ${pct(6)}, grass ${pct(1)} | ` +
       `connectivity: ${components} component(s), ${largest}/${walkable} walkable cells | ` +

@@ -54,7 +54,7 @@ Pipeline, in order:
 
 1. **Irregular border band** — mostly 1 tile thick, with ~18 % gaps and ~8 % bulges; 2–4 deliberate openings.
 2. **Mountain accents** — 5 % of the band, gid 6.
-3. **Strait** — a vertical channel splitting the map, plus the main road skeleton (see below).
+3. **Water** — one full-height channel splitting the map into two landmasses, in one of two looks: a deliberately straight **strait** (5–7 tiles wide, sd 0.00) or a meandering **river** (width 4–18, meander 11–20 tiles, optional pool and funnel-mouthed inlets). A seed picks 2:1 in favour of river; `--water` forces it. Plus the main road skeleton (see below).
 4. **Clumps** — 12–18 edge clumps, 8–12 interior clumps, 3–6 mountain clumps, grown by random walk from grass seeds.
 5. **Cities** — 8–12 overlapping districts of 8–14 buildings each, gap-separated, neutral gid 9 only.
 6. **Roads** — district roads, tip extension, side roads (detailed below).
@@ -65,8 +65,10 @@ Pipeline, in order:
 
 These rules took several iterations to settle and are the least obvious part of the generator:
 
-- **Main skeleton is laid before cities** (step 3), so the strait is already crossable when the connectivity guard runs. Without this every city was reverted as "stranding".
-- **Only the main skeleton reaches the map edge**: one full-width horizontal road (bridging the strait) and one full-height vertical with a step. **District roads never run to the frame** — trailing into the top/bottom edge reads as junk (tried; 3/4 of seeds looked wrong).
+- **Main skeleton is laid before cities** (step 3), so the channel is already crossable when the connectivity guard runs. Without this every city was reverted as "stranding".
+- **Only the main skeleton reaches the map edge**: one full-width horizontal road (bridging the channel) and one full-height vertical with a step. **District roads never run to the frame** — trailing into the top/bottom edge reads as junk (tried; 3/4 of seeds looked wrong).
+- **Exactly one bridge.** `setRoad(..., allowBridge)` only lets the main horizontal road build over water, and `connectPoint` treats water as blocking. Previously a district could route straight across the channel and silently add a second bridge, splitting the water into three bodies.
+- **Orphan prune (5b2).** After district routing, any road component that does not contain `mainRoadSeed` is cleared back to grass. `routeDistrict`'s return value is ignored by its caller, so a district that could not reach the network (common now that it may not bridge) would otherwise leave a detached fragment. It runs *before* tip extension and side roads so those can still reconnect the district over land.
 - **District roads are not boxes.** The old rectangular ring made four-way corners that read as unnatural roundabouts. Instead each district gets a **main road through it** — the row/column with the most building frontage — joined to the network at both ends, plus **spurs** to off-road cities.
 - **Neighbour skip:** a city is skipped if it is 8-adjacent to an already-served city.
 - **Tip extension:** dead-ends extend up to 12 tiles, but only to serve a city or join a road — never to the frame.
@@ -76,7 +78,9 @@ These rules took several iterations to settle and are the least obvious part of 
 
 ### Bridge
 
-Deck **131** on the road row with strut **149** in the water cell directly south. Deck counts as ROAD (walkable); strut counts as WATER (impassable). Struts are computed **after all roads** so spurs that cross water get them too. Guarded: deck and strut counts must match.
+Deck **131** on the road row with strut **149** in the water cell directly south. Deck counts as ROAD (walkable); strut counts as WATER (impassable). This is the board's **only** bridge: `setRoad` requires `allowBridge`, and district roads are refused over water.
+
+The deck is drawn so the water reads as **flowing freely underneath** — the strut in the water cell below is the only tell. That is deliberate: the water stays severed into two bodies for gameplay while looking continuous to the player. So a vision model reporting "one continuous river" is describing the intended result, not a bug — see the vision-model section in `tooling_notes.md`.
 
 ---
 
@@ -88,6 +92,7 @@ Deck **131** on the road row with strut **149** in the water cell directly south
 | `assets/generator/palette.json` | gid ↔ role table with evidence inline; now includes `deadEndTop`/`deadEndBottom` |
 | `TerrainType` | Grass 1, Forest 2, Water 3, Mountain 4, Road 5, Building 6 + `TERRAIN_DEFS` |
 | Seeded generator | `npm run map:generate` (`--seed`, `--width`, `--height`), deterministic per seed |
+| Water styles | `--water` = strait / river / auto. strait keeps the deliberate sd 0.00 canal; river meanders (measured width 4–18, meander 11–20 tiles, optional pool + inlets). 80/80 seeds pass `verifyMap`, output byte-identical per seed in both styles |
 | Composer rewrite | `scripts/lib/compose-map.cjs`, 4 layers + terrain sidecar |
 | `verifyMap` hardened | board size, tileset header, ground non-zero, gid→terrain drift (flip-masked), forbidden gids, collision == water‖building, occupancy band 32–42 %, connectivity = 1, **road connectivity = 1**, all terrain types present |
 | Map render tooling | `tools/render-map-preview.cjs` (full board), `tools/render-road-test.cjs`, `tools/render-tile-test.cjs` |
@@ -171,7 +176,7 @@ npm install
 npm run map:generate      # expect: Verified: 64x48 @ 16px, 4 layers | connectivity: 1 component(s)
 node tools/map-stats.cjs  # expect: verdict: OK  (1 orphan city is normal)
 npx tsc --noEmit          # expect exit 0
-node tools/render-map-preview.cjs   # -> tools/map-preview.png
+node tools/render-map-preview.cjs   # -> tools/previews/map-preview.png
 npm run dev               # currently shows board center at old 800x600 zoom - renderer rework pending
 ```
 
@@ -219,6 +224,7 @@ Dev-only, safe to delete, not in any build path (gitignored):
 
 - `tools/palette-inspector.html`, `tools/tile-picker.html` — palette viewers
 - `tools/*.txt` — generated reports
-- `tools/*.png` — renders (`map-preview.png` is regenerated each run)
-- `tools/tiles/awbw-ref{1..4}-x3.png` — upscaled AW reference maps from the user
+- `tools/previews/*.png` — every generated render (`map-preview.png` is regenerated each run)
+- `tools/vision_input/{unread,read}/` — screenshots handed to the vision model by path, since images cannot be pasted into chat. Drop new captures in `unread/`, they move to `read/` once analysed; the folder accumulates and is gitignored. See `tooling_notes.md` → "Feeding images in".
+- `tools/awmaps/*.png` — AW reference map rips (not our renders)
 - `.playwright-mcp/` — browser tool output

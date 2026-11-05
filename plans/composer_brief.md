@@ -33,7 +33,7 @@ that is why the current map reads as uniform noise.
 - [`tile_roles.md`](./tile_roles.md) — authoritative gid → role table (terrain,
   coast, roads, bridges, buildings, UI sprites that must **never** be terrain)
 - [`aw_style.md`](./aw_style.md) — the AW1 grammar being imitated and the
-  reference renders in `tools/tiles/`
+  reference renders in `tools/previews/`
 - [`phase_4.md`](./phase_4.md) — G1/G2 done, G3 (terrain sidecar) and G4 (layer
   merge) still pending; the composer should deliver both naturally
 
@@ -83,7 +83,7 @@ that is why the current map reads as uniform noise.
   continuous sand coastline, at least one road with bends and a bridge, and open
   central lanes.
 - Same-seed determinism verified; `npx tsc --noEmit` clean.
-- Reference renders committed to `tools/tiles/` are gitignored; update the docs.
+- Reference renders live in `tools/previews/` (gitignored); update the docs when they change.
 
 ## Visual iteration loop
 
@@ -97,6 +97,43 @@ density. Useful helpers already exist:
 - `tools/make-montage.cjs` — compile several PNGs into one comparison sheet
 - `tools/upscale-png.cjs` — nearest-neighbour zoom for reading 16 px art
 
+## Water (as implemented)
+
+The board has **one** water region spanning the full height, so it splits the map
+into two landmasses and the single horizontal bridge is a real chokepoint. Two
+looks exist; a seed draws one at random (2:1 in favour of `river`), and
+`--water strait|river|auto` on `generate-map.cjs` forces it.
+
+- **`strait`** — constant centre, constant width (5 or 7 tiles), width sd exactly
+  0.00. The absence of variance is the point: it reads as an engineered cut, a
+  legitimate AW look and the cleanest chokepoint. Kept deliberately.
+- **`river`** — the centreline is a sum of two sines (a broad bend plus a smaller
+  kink) so the banks curve instead of stepping one tile at a time; half-width
+  breathes along the course, and ~60% of rivers widen into a pool. Measured over
+  12 seeds: width 4..18, width sd 1.3..3.3, meander (centroid travel) 11..20
+  tiles, where the old strait measured a flat 7 wide with sd 0.00 and no travel.
+
+Three invariants, each of which was a real bug first:
+
+- **Exactly one bridge.** `setRoad(x, y, orientation, allowBridge = false)` only
+  lets the main horizontal road build over water; district roads are refused and
+  `connectPoint` now treats water as blocking. Before that, a district could route
+  across the channel and silently make a second bridge, splitting the water into
+  three bodies (seed 42).
+- **Tributaries cannot float free.** A spur leaves the bank as a funnel (3 tiles
+  tall, then 2, then 1) and starts from the *actually carved* bank, not the
+  analytic centreline — a pool pushes the real bank further out, and a spur begun
+  inside the channel reads as a notch. Spurs never reach the map edge, or they
+  would seal a pocket behind them.
+- **No land pockets.** After carving, any land not reachable from the left or
+  right edge is enclosed by water and gets filled. A spur curling back at a sharp
+  bend otherwise left a 2-cell island that `verifyMap` rejected — and on seed 16
+  that starved city placement completely (0 buildings).
+
+`verifyMap` enforces the result: 1 walkable component, 1 road component, bridge
+deck only on the main road. 80/80 seeds pass, and output is byte-identical for a
+repeated seed in both styles.
+
 ## Road planning (as implemented)
 
 The AW road grammar settled over several iterations. The rules below are the
@@ -104,10 +141,15 @@ current behaviour in `scripts/lib/compose-map.cjs` and are non-obvious enough to
 keep documented:
 
 - **Main skeleton (step 3b), the only roads that reach the map edge:** one
-  horizontal road spanning the full width (bridges the strait with deck 131 over
-  struts 149), one vertical road spanning the full height with a single step.
-  Laid *before* cities so the strait is crossable when the connectivity guard
-  runs.
+  horizontal road spanning the full width (bridges the channel with deck 131 over
+  struts 149 — the only road allowed to build over water), one vertical road
+  spanning the full height with a single step. Laid *before* cities so the channel
+  is crossable when the connectivity guard runs.
+- **Orphan prune (5b2):** after district routing, any road component that does not
+  contain the main-road cell is cleared back to grass. `routeDistrict`'s return
+  value is ignored by its caller, so a district that could not reach the network
+  (now common, since it may no longer bridge) would otherwise leave a detached
+  fragment. Runs *before* 5c/5d so those passes can still reconnect it over land.
 - **District roads (routeDistrict):** each city cluster gets a **main road
   through it** — the row or column with the most building frontage — connected to
   the network at both ends, not a box/ring (a ring's 4-way corners read as
