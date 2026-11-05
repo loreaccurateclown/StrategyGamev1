@@ -302,6 +302,7 @@ for (let y = 0; y < uh; y++) {
   }
 }
 
-const outPath = path.join(__dirname, "tiles", "compare-indiv-vs-sheet.png");
+const outPath = path.join(__dirname, "previews", "compare-indiv-vs-sheet.png");
+fs.mkdirSync(path.dirname(outPath), { recursive: true });
 fs.writeFileSync(outPath, encodePng(uw, uh, up));
 console.log(`wrote ${outPath}  ${uw}x${uh}px  (top = individual tiles, bottom = contiguous sheet, red divider)`);

@@ -208,6 +208,7 @@ function render(cells, cols, rows, outPath) {
       up[d + 3] = img[s + 3];
     }
   }
+  fs.mkdirSync(path.dirname(outPath), { recursive: true });
   fs.writeFileSync(outPath, encodePng(uw, uh, up));
   console.log(`wrote ${outPath} (${cols}x${rows} tiles -> ${uw}x${uh}px)`);
 }
@@ -256,7 +257,7 @@ render(
   ),
   12,
   9,
-  path.join(__dirname, "tiles", `coast-test-a${SUFFIX}.png`)
+  path.join(__dirname, "previews", `coast-test-a${SUFFIX}.png`)
 );
 
 // B: one clean corner (19) mirrored into all four corners
@@ -275,5 +276,5 @@ render(
   ),
   12,
   9,
-  path.join(__dirname, "tiles", `coast-test-b${SUFFIX}.png`)
+  path.join(__dirname, "previews", `coast-test-b${SUFFIX}.png`)
 );

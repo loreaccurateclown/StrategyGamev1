@@ -7,7 +7,7 @@
  *   node tools/render-map-preview.cjs [map.json] [--scale N]
  *
  * Defaults: public/assets/maps/level_01.json, scale 2 (nearest-neighbour).
- * Output: tools/map-preview.png (gitignored).
+ * Output: tools/previews/map-preview.png (gitignored).
  */
 const fs = require("node:fs");
 const path = require("node:path");
@@ -247,7 +247,9 @@ if (scale > 1) {
   }
 }
 
-const outPath = path.join(__dirname, "map-preview.png");
+const OUT_DIR = path.join(__dirname, "previews");
+const outPath = path.join(OUT_DIR, "map-preview.png");
+fs.mkdirSync(OUT_DIR, { recursive: true });
 fs.writeFileSync(outPath, encodePng(finalW, finalH, finalBoard));
 console.log(
   `Rendered ${rendered} layers (${skipped} collision skipped): ` +

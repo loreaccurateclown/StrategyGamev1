@@ -11,7 +11,7 @@
  * occupies row 5 (the water directly below the elevated deck); water fill
  * everywhere else in the strait.
  *
- * Output: tools/tiles/bridge-compare.png
+ * Output: tools/previews/bridge-stacks.png
  */
 const fs = require("node:fs");
 const path = require("node:path");
@@ -159,6 +159,7 @@ for (let y = 0; y < uh; y++) {
     up[d] = out[s]; up[d + 1] = out[s + 1]; up[d + 2] = out[s + 2]; up[d + 3] = out[s + 3];
   }
 }
-const outPath = path.join(__dirname, "tiles", "bridge-stacks.png");
+const outPath = path.join(__dirname, "previews", "bridge-stacks.png");
+fs.mkdirSync(path.dirname(outPath), { recursive: true });
 fs.writeFileSync(outPath, encodePng(uw, uh, up));
 console.log("wrote " + outPath + "  (top-to-bottom: " + panels.map((p) => p.label).join(", ") + ")");
