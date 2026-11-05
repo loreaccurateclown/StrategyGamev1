@@ -148,6 +148,10 @@ const args = process.argv.slice(2);
 const mapArg = args.find((a) => !a.startsWith("--"));
 const scaleArg = args.find((a) => a.startsWith("--scale"));
 const scale = Math.max(1, Math.floor(Number((scaleArg ?? "--scale=2").split("=")[1] ?? 2) || 2));
+// --out lets a variant render sit beside the canonical preview instead of over it,
+// which matters when comparing two shoreline generations of the same seed.
+const outArg = args.find((a) => a.startsWith("--out"));
+const outName = outArg ? outArg.split("=")[1] : null;
 
 const MAP_PATH = mapArg
   ? path.resolve(mapArg)
@@ -248,7 +252,7 @@ if (scale > 1) {
 }
 
 const OUT_DIR = path.join(__dirname, "previews");
-const outPath = path.join(OUT_DIR, "map-preview.png");
+const outPath = outName ? path.join(OUT_DIR, outName) : path.join(OUT_DIR, "map-preview.png");
 fs.mkdirSync(OUT_DIR, { recursive: true });
 fs.writeFileSync(outPath, encodePng(finalW, finalH, finalBoard));
 console.log(
