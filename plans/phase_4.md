@@ -297,6 +297,115 @@ an edge tile. `tools/render-shore-mask.cjs` renders the whole table in context a
 
 `verifyMap` still passes 24/24 seeds in both water styles.
 
+### G7 — City distribution: trunk roads + graded thinning ⬜ (designed 2026-11-05)
+
+**The complaint.** City generation is *correct* but reads as machine-made — the same feeling the old water
+had. The measured reason: **86.1 of 90.8 buildings per map are road-adjacent (95 %)**. Because essentially
+every building sits on a road, the road network reaches everywhere, so building density is uniform across
+the board. There is no "developed core / wild hinterland" gradient, which is exactly what the AW reference
+grammar in `aw_style.md` wants.
+
+**Measured baseline (12 seeds from `tools/bulk-preview.cjs`)**
+
+| Metric | Value |
+|---|---|
+| buildings per map | 90.8 (range 72–112) |
+| road-adjacent | 86.1 (95 %) |
+| orphan (no road neighbour) | 4.8, but **bimodal**: 10 maps have 0–2, two maps have 29 and 24 |
+| road cells per map | 312 (range 204–386) |
+| 4-connected building clusters | 83.8 — nearly all size 1, **useless as "clusters"** |
+| spatial districts (radius-3 linkage) | 6 per map, median size 11, largest 49 |
+
+Two consequences for the design. First, the bimodal orphans are not a feature: the two maps with 24–29
+orphans are also the two with the **fewest road cells** (235, 204), so orphans appear only when the road
+planner ran short — it is incidental, not authored. Second, "a city cluster of size *k*" cannot mean
+adjacency, because adjacent buildings barely exist. **The unit is a district: buildings grouped at
+Chebyshev distance ≤ 3**, giving k ≈ 6–49, which is the range a graded probability curve needs.
+
+**Goal 1 — fewer road connections to cities.** Stop treating "every building gets a road" as an invariant.
+Plan districts first, then route a *trunk* network through a subset of them, leaving the rest as satellite
+districts. Target: ~60–70 % of buildings road-adjacent instead of 95 %. This does **not** relax
+`verifyMap`'s road-connectivity assertion: the road network must stay one component, it simply stops
+visiting every district. Orphan *districts* are wanted; orphan *road fragments* are still a failure.
+
+**Goal 2 — graded thinning inside a district.** Dense at the core, dissolving at the fringe, so a district
+has a readable centre rather than a uniform blob. Proposed rule, replacing the "n %, n−1 %, …" sketch with
+an explicit curve:
+
+```
+p_keep(site) = clamp(p_core - SLOPE * d, P_MIN, 1.0)
+  d      = Chebyshev distance from the site to the nearest road cell
+           (districts with no road at all: distance to the district core)
+  p_core = 1.0
+  SLOPE  = 0.12   ~12 percentage points lost per tile of distance
+  P_MIN  = 0.25   fringe never drops to zero, or districts get hard edges
+```
+
+Plus three guards a pure probability curve cannot give:
+
+- **Never dissolve a district.** Keep at least one site in every district of size ≥ 4, chosen as the site
+  closest to the district centroid, so thinning cannot delete a district entirely.
+- **Cap orphans deliberately.** At most 1 fully roadless district per map, size ≤ 8. This replaces the
+  accidental 0-or-29 distribution with a chosen 0-or-1.
+- **Deterministic.** All draws go through the seeded `prng.cjs`, never `Math.random`, so a seed still
+  reproduces its map byte-identically.
+
+**✅ DECIDED 2026-11-05 — density concentrates toward the road, orphans are pruned hardest.**
+
+The original request read in two directions at once: *"allow more orphan cities off the road network"* versus
+*"the percentage grows smaller the closer it gets to cities that see actual gameplay utility"*. Taken
+literally, the second sentence thins the utility cities **most** and spares the roadless ones, which is the
+opposite of a gradient toward infrastructure and makes roads matter less where units actually use them.
+
+Resolved by the user: **orphaned cities should have the higher chance of disappearing.** So the curve above
+is correct as written — `p_keep` falls with distance from the road, the district core (the road end) is the
+dense part, and the fringe dissolves.
+
+**The trap, recorded so it is not re-inverted.** The quantity being scaled is the chance a city **exists**.
+Decreasing it removes the *tail* (the orphans); it does not add them. It is easy to read "decreasing %"
+as "fewer buildings overall" and then reason about the wrong end. The two statements are only compatible
+once "fewer road connections to cities" is understood as **roads visit fewer districts**, not as **more
+buildings sit off-road**:
+
+- fewer road *connections* → the road network stays one component but visits a subset of districts (goal 1
+  is satisfied, and `verifyMap`'s road-connectivity assertion is untouched);
+- everything off-road → thinned by distance, so what survives is a handful of isolated hamlets rather than
+  the accidental 0-or-29 distribution measured today.
+
+Net effect: built-up districts sit *on* the spine, satellites are rare and deliberate, and total building
+count drops from ~91/map (expect roughly 60–75 once thinning lands — to be measured, not assumed).
+
+### G7 — back pocket: smaller districts vs ambient buildings
+
+Recorded 2026-11-05, deliberately **not** part of G7 as designed. Kept because it is the likely next move if the
+gradient still reads too even.
+
+The lever for "make the map look busier away from roads" is **not** the thinning curve — it is district
+*granularity*: **more districts, each smaller, with roads visiting a subset.** Two variations were floated:
+
+- **(i) fewer cities, same radius** — a district keeps its footprint but fills sparsely;
+- **(ii) smaller radius and fewer cities** — the district shrinks, so the silhouette is compact rather than a
+  wide sparse field.
+
+**The tradeoff is against a design intent that is not written down anywhere.** The user's earlier mental model
+for the game was *ambient buildings scattered around special-purpose buildings* — ordinary settlements exist
+because they sit near something with a purpose (factory, dockyard, airport, HQ). `grep` across `plans/` finds no
+mention of "ambient" or "special-purpose", so this is carried only in the user's head and **must be specified
+before G7 is implemented**, because it decides what a district even is:
+
+| | Unit of generation | Why a building exists | Needs first |
+|---|---|---|---|
+| **A — districts** | an abstract density blob on a probability curve | road proximity / gradient | nothing; can ship now |
+| **B — ambient around purpose** | a cluster around a special-purpose building | proximity to purpose | the special-purpose list, their placement rule, and the gid → role decision |
+
+They compose rather than compete: **B supplies the candidate sites, the curve decides which survive.** But B is
+blocked on things that do not exist yet — only neutral city gid 9 is generated, and "factory placement" is still
+an open question in `progress.md` (leaning spawn logic rather than the composer). Airport 16, dockyard 13,
+factory 12 and antenna 14 are identified in the palette but unplaced.
+
+**Action before implementing G7:** get the user's "mental map of the game" for purpose-buildings written down.
+Everything above is a guess at it, and guessing would bake the wrong model into the composer.
+
 ### Order and gate
 
 ```

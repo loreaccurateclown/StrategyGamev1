@@ -16,12 +16,13 @@ Observed from the Field Training rips plus the campaign map (which is a world ma
 2. **The border band is irregular, not a clean rectangle.** Its thickness varies from 1 to ~4 tiles, it bulges inward in places, and it leaves deliberate openings — the map reads as a clearing cut out of wilderness.
 3. **Rivers are 1 tile wide and run edge to edge,** stepping at right angles (chunky, axis-aligned, never diagonal), and are crossed by **bridges** at 1–2 points.
 4. **Roads are 1 tile wide,** run straight or step at 90°, and link bases/cities. They are the map's spine, not decoration.
-5. **Clumps attach to things.** Forest blobs touch each other, the border band, rivers, or roads. Isolated single blobs in open field are rare; vegetation grows off existing structure.
-6. **Mountains form ridges or small dense clusters,** usually on the border band or as a spine separating two halves — not scattered rectangles.
-7. **Open plains are corridors between structures.** The contested middle is largely open; obstacles define lanes and choke points around it rather than speckling it evenly.
-8. **Coastlines are shoal lines.** Every land/sea boundary has a 1–2 tile cream/shoal transition band; water never meets green directly.
-9. **Water is either a river or a large connected sea at the edge** — rectangular interior ponds do not occur.
-10. **Density is structure-dependent:** open field maps run ~15–25 % non-plains terrain, but almost all of it is in bands/edges, with very little in the middle.
+5. **Settlements are graded, not uniform.** A map has a few developed districts sitting *on* the road spine and thin satellites off it — density falls away from the road. A building field where every structure is road-adjacent (our current 95 %) reads as generated, because the road then reaches everywhere and density becomes flat. Same principle as forest "clumps attach to things": built-up areas grow off structure, and the far field stays sparse.
+6. **Clumps attach to things.** Forest blobs touch each other, the border band, rivers, or roads. Isolated single blobs in open field are rare; vegetation grows off existing structure.
+7. **Mountains form ridges or small dense clusters,** usually on the border band or as a spine separating two halves — not scattered rectangles.
+8. **Open plains are corridors between structures.** The contested middle is largely open; obstacles define lanes and choke points around it rather than speckling it evenly.
+9. **Coastlines are shoal lines.** Every land/sea boundary has a 1–2 tile cream/shoal transition band; water never meets green directly.
+10. **Water is either a river or a large connected sea at the edge** — rectangular interior ponds do not occur.
+11. **Density is structure-dependent:** open field maps run ~15–25 % non-plains terrain, but almost all of it is in bands/edges, with very little in the middle.
 
 ## How the current generated 64×48 map diverges
 
