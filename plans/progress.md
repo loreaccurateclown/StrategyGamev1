@@ -203,12 +203,12 @@ npm run map:generate -- --seed 1234
 
 The generator is in good shape and the map contract is **frozen** (4 layers + terrain sidecar). The critical path is now the game engine:
 
-1. **`TileMapManager` (4.2b)** — read the 4 layers + sidecar, no gid reverse-mapping. Unblocked now.
-2. **Renderer display rework** — 48 px/tile, panning, `Phaser.Scale.RESIZE`.
-3. **`Pathfinding.ts` + tests** — can run in parallel; own fixtures, no map dependency.
-4. **Units + reachable highlighting + movement.**
+1. **`TileMapManager` (4.2b)** — read the 4 layers + sidecar, no gid reverse-mapping. Unblocked now, and it is the last thing standing between us and the core loop.
+2. **Core loop (1.5)** — pointer → tile → `getReachableTiles` → tint → click to move. Pathfinding and the terrain boundary are both done, so this is wiring.
+3. **Renderer display rework (4.2a)** — 48 px/tile, panning, `Phaser.Scale.RESIZE`.
+4. **Units + highlighting + movement polish** — real unit sprites, and the reachable overlay as a proper layer.
 
-Generator work that can wait but is known: dockyard-on-shore, factory placement decision, generating non-neutral buildings (airport/dockyard/factory) once spawn logic exists.
+Generator work that can wait but is known: dockyard-on-shore, factory placement decision, generating non-neutral buildings (airport/dockyard/factory) once spawn logic exists, and G7 city distribution.
 
 ---
 
