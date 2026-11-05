@@ -275,9 +275,27 @@ This replaces 4.2b's reverse-mapping entirely.
 
 The ASCII legends previously referenced two chars per element (forest 2/5 variants, water 2/3, mountain 2/9). The G1 art uses **three variants per element** (forest `T t f`, water `w W s`, mountain `m M n`), so the terrain no longer reads as flat repeats.
 
-### G6 — Shoreline autotiling (last)
+### G6 — Shoreline autotiling ✅ (done 2026-11-05)
 
-Water is a solid pond of fill gids; 11 shore/edge gids (19–23, 37, 39, 40, 55–57) are unused, so ponds have hard rectangular edges. Needs a neighbour→edge-tile orientation map plus post-processing of the water layers in `generate-map.cjs`. Fiddly; only worth it once G1 makes the lakes bigger.
+Done. Water is no longer a solid pond of fill gids: `scripts/lib/shore-mask.cjs` holds an explicit 16-case
+table keyed on `N<<3 | S<<2 | W<<1 | E`, where a set bit means that neighbour is **land**, and the composer
+asks it for every water cell instead of falling back to the fill gid.
+
+Art inventory was measured with `tools/tile-shore-scan.cjs`, not guessed. Two findings changed the design:
+
+- **`58` was missing from the palette.** It is water with banks on **W and E** — the narrow vertical
+  channel. Without it a 1-tile-wide vertical inlet rendered as bare blue.
+- **There is no beach-bearing south bank.** `20` (north bank) is land 0–3 / sand 4–6 / water 7–15; the only
+  south-facing bank, `56`, is a different art family with **zero** beach pixels and 12 px of water. Pairing
+  them in a two-tall inlet gave a beach on the top edge and a hard cut on the bottom. The south bank is
+  therefore declared as `{ "gid": 20, "flip": "v" }` — flip flags mirror, which is exactly right.
+
+A diagonal pass then handles the concave (inner) corner, which a 4-neighbour mask cannot express: water with
+land touching only corner-to-corner. `91/92/93/94` put a bank wedge in exactly one corner and fire ~44
+times per map. They are consulted **only** when the orthogonal mask is empty, so they can never fight with
+an edge tile. `tools/render-shore-mask.cjs` renders the whole table in context as a truth table.
+
+`verifyMap` still passes 24/24 seeds in both water styles.
 
 ### Order and gate
 

@@ -60,7 +60,12 @@ Order of work:
    so a long ridge would read as a repeated stamp. Carry the framing look with
    forest (95 edge / 113 interior) and use mountains as punctuation.
 6. **Open lanes** — carve/keep 2–3 wide plains corridors so the middle stays fightable; connectivity check must still see one component.
-7. **Shoal coastline (stretch)** — use the unused shore/edge gids from palette research (19–23, 37, 39, 40, 55–57) around water edges. This is G6, previously deferred; it is the single biggest recognisability win for water.
+7. **Shoal coastline** — ✅ **done 2026-11-05.** The shore/edge set is wired as a 16-case mask
+   table in `scripts/lib/shore-mask.cjs` (`20`/`56→20|V`/`37`/`39` + corner `19` + flips +
+   inner corners `91–94` + vertical channel `58`), with a diagonal pass for concave corners and
+   a truth-table renderer (`tools/render-shore-mask.cjs`). One caveat that is in the art, not
+   the code: `37`/`39` carry only ~2 beach pixels against `20`'s three-row sand band, so
+   vertical banks still read flatter than horizontal ones.
 
 Out of scope for the first pass: **buildings** (cities 27–29, factory 30, dockyard 31). They are properties that do not exist in the game yet, so adding them would commit us to "buildings are impassable scenery" before capture/gameplay is designed. The user's decision (2026-11-01) is to add them later, after the ground shape is right.
 
@@ -69,8 +74,9 @@ Roads and bridges **are** in scope now — the sheet does have them, contrary to
 ## Coastline technique (settled by render tests)
 
 Build all four water corners from **gid 19 plus flip flags** (horizontal, vertical,
-both), with straights 20 (land north), 56 (land south), 37 (land west),
-39 (land east) and fill 38. The sheet's own bottom corners (22/23) carry stray
+both), with straights 20 (land north), 37 (land west), 39 (land east) and fill 38.
+South is **not** 56: 56 has no beach band, so the generator mirrors the north bank
+as `20|V` instead (see progress.md fact 10). The sheet's own bottom corners (22/23) carry stray
 land specks and visibly break the waterline — see `tools/previews/coast-montage.png`
 (green frames = correct stride and the flip approach; red frames = the classic
 spacing/stride bug for comparison).

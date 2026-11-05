@@ -23,7 +23,7 @@ that is why the current map reads as uniform noise.
 | Scope this pass | **terrain + roads + bridges** — buildings deferred |
 | Tileset source | contiguous `Tilemap/tilemap.png` (art identical to the individual tiles: 197/198, one UI-arrow pixel diff) |
 | Water | lakes/coast only — **no rivers exist in the sheet** |
-| Coast corners | gid **19 + flip flags** (H/V/both); straights 20/37/39/56; fill 38 |
+| Coast corners | gid **19 + flip flags** (H/V/both); straights 20 / 37 / 39; south is `20|V`, **not** 56; fill 38; inner corners 91–94 |
 | Mountains | gid 6, single tile, **accents only**; forest carries the framing |
 | Determinism | same seed ⇒ byte-identical output, as today |
 | Verification | keep and extend `verifyMap` (occupancy band, connectivity, footprints) |
@@ -49,7 +49,8 @@ that is why the current map reads as uniform noise.
      accents (6), thickness 1–4 varying per side, 2–4 deliberate openings
    - clusters grown *from* the band inward (random-walk blobs, size distribution)
      rather than placed at random positions
-   - 1–2 lakes, rectangular-ish with the coast autotile (19 + flips + 20/37/39/56 + 38)
+   - 1–2 lakes, rectangular-ish with the coast autotile (19 + flips + 20/37/39 + 38;
+     the south bank is `20|V`, **not** 56 — see progress.md fact 10)
    - 1–2 roads edge to edge with bends and a bridge crossing a lake
      (131 / 167 / 149 + 74 for pillar reflections)
    - keep 2–3 wide open plains lanes through the middle

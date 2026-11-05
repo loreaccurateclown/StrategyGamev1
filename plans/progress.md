@@ -95,8 +95,10 @@ The deck is drawn so the water reads as **flowing freely underneath** — the st
 | Water styles | `--water` = strait / river / auto. strait keeps the deliberate sd 0.00 canal; river meanders (measured width 4–18, meander 11–20 tiles, optional pool + inlets). 80/80 seeds pass `verifyMap`, output byte-identical per seed in both styles |
 | Composer rewrite | `scripts/lib/compose-map.cjs`, 4 layers + terrain sidecar |
 | `verifyMap` hardened | board size, tileset header, ground non-zero, gid→terrain drift (flip-masked), forbidden gids, collision == water‖building, occupancy band 32–42 %, connectivity = 1, **road connectivity = 1**, all terrain types present |
-| Map render tooling | `tools/render-map-preview.cjs` (full board), `tools/render-road-test.cjs`, `tools/render-tile-test.cjs` |
+| Map render tooling | `tools/render-map-preview.cjs` (full board, `--out=<name>` for variants), `tools/render-road-test.cjs`, `tools/render-tile-test.cjs` |
 | Structural QA tool | `tools/map-stats.cjs` — road components, city frontage, walkable components, bridge counts, verdict |
+| Shoreline autotiling (G6) | `scripts/lib/shore-mask.cjs` — 16-case table + diagonal pass for concave corners. Art inventory measured by `tools/tile-shore-scan.cjs`; truth table rendered by `tools/render-shore-mask.cjs`. 24/24 seeds pass; inner corners fire 1,619×/40 maps, 0 cells left on open-water fallback |
+| South bank is a mirror | `coast.edges.south` = `{ "gid": 20, "flip": "v" }`. `56` has zero beach pixels and 12 px of water against `20`'s three-row sand band and 9 px, so pairing them made a two-tall inlet asymmetric. A/B render of both variants: 14 tiles differ, 0.25 % of the frame |
 
 ---
 
@@ -122,13 +124,16 @@ The deck is drawn so the water reads as **flowing freely underneath** — the st
 5. **The tileset block must never be edited away.** `verifyMap` checks the tileset header, and `addTilesetImage` needs the block name plus a separate texture key.
 6. **A road tile DOES exist** and the full grammar is implemented — horizontal 111, vertical 145, single 109, dead-ends 110/112/127/163, bends 164/166/128/130, tees 165/129/146/148, cross 147, bridge deck 131/167. (The old handoff said "there is no road tile" — that was true of the Kenney *individual tile pack* view, not the sheet.)
 7. **Flip flags must be masked before any gid→role lookup**: horizontal `0x80000000`, vertical `0x40000000`; mask with `gid & 0x1FFFFFFF`.
-8. **Coast corners are gid 19 + flips**, never the 22/23/24/25 tiles (those carry stray land specks). Out-of-bounds counts as water; a bridge deck counts as water for the coast; buildings count as land.
-9. **Forest has two variants**: 95 (edge/single pine) and 113 (interior/two pines). Choose by whether all four cardinal neighbours are forest.
-10. **Buildings are impassable** (`passable: false`, `moveCost: Infinity`), so every city placement must re-run the connectivity guard and revert if it strands a pocket.
-11. **Only water, buildings and the border band can partition the board.** Forest and mountain are passable (cost 2/3), so dense forest never disconnects — which is why occupancy tuning and connectivity are coupled but not identical.
-12. **`neverUseAsTerrain` gids**: 18, 26, 41, 42, 43, 44, 59, 60, 61, 62, 77, 78, 79, 119, 126, 143, 144 — UI arrows, flag animation frames, unconfirmed gid 26, and unit sprites. `verifyMap` fails if any appear in the terrain layer.
-13. **`.vscode/todos.json` is gitignored** (`.gitignore` has `.vscode/*` with only `extensions.json` excepted). The task tracker is local-only.
-14. **Board size is display-driven, not a tileset constraint.** Tiles verified at 16×16 (`kenney_tinybattle.tsx`: `tilewidth=16`, `spacing=1`, `columns=18`, 198 tiles; PNG 305×186). The old 37×37 cap came from `fitCameraToMap` clamping zoom inside a hardcoded 800×600 canvas. That approach is **retired**; do not resurrect fit-to-window zoom.
+8. **Shorelines are a 16-case table, not if-chains.** `scripts/lib/shore-mask.cjs` owns it, keyed on `N<<3 | S<<2 | W<<1 | E` with a set bit meaning that neighbour is **land**. The old code handled nine of sixteen cases and silently fell through to the open-water fill, so thin inlets rendered as bare blue strips.
+9. **Coast corners are gid 19 + flips**, never the 22/23/24/25 tiles (those carry stray land specks). Out-of-bounds counts as water; a bridge deck counts as water for the coast; buildings count as land.
+10. **The south bank is `20` flipped vertically, not gid 56.** `56` is the only south-facing bank in the sheet but it belongs to a different art family: zero beach pixels and 12 px of water against `20`'s three-row sand band and 9 px. Pairing them in a two-tall inlet gave a beach on the top edge and a hard cut on the bottom. Flip flags mirror rather than rotate, so `20|V` is the exact mirror of the north bank.
+11. **The 4-neighbour mask cannot express a concave corner.** Water with land touching only corner-to-corner has no orthogonal land, so it resolved to open water and the bank simply stopped — 1,756 cells over 40 maps. `91/92/93/94` put a bank wedge in one corner each and are consulted **only** when the orthogonal mask is empty. Multi-diagonal cells (~2.5/map) stay on fill deliberately: `40/73/75/76` are keyed on the edge middle being water and do not line up with every opposite-corner pair.
+12. **Forest has two variants**: 95 (edge/single pine) and 113 (interior/two pines). Choose by whether all four cardinal neighbours are forest.
+13. **Buildings are impassable** (`passable: false`, `moveCost: Infinity`), so every city placement must re-run the connectivity guard and revert if it strands a pocket.
+14. **Only water, buildings and the border band can partition the board.** Forest and mountain are passable (cost 2/3), so dense forest never disconnects — which is why occupancy tuning and connectivity are coupled but not identical.
+15. **`neverUseAsTerrain` gids**: 18, 26, 41, 42, 43, 44, 59, 60, 61, 62, 77, 78, 79, 119, 126, 143, 144 — UI arrows, flag animation frames, unconfirmed gid 26, and unit sprites. `verifyMap` fails if any appear in the terrain layer.
+16. **`.vscode/todos.json` is gitignored** (`.gitignore` has `.vscode/*` with only `extensions.json` excepted). The task tracker is local-only.
+17. **Board size is display-driven, not a tileset constraint.** Tiles verified at 16×16 (`kenney_tinybattle.tsx`: `tilewidth=16`, `spacing=1`, `columns=18`, 198 tiles; PNG 305×186). The old 37×37 cap came from `fitCameraToMap` clamping zoom inside a hardcoded 800×600 canvas. That approach is **retired**; do not resurrect fit-to-window zoom.
 
 ---
 

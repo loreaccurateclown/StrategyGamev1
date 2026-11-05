@@ -35,6 +35,27 @@ Recorded 2026-11-05. This project owns the generator and the engine, so **the da
 - **Crop before asking structural questions** — ≤ 8 tiles across. At full-board scale a 1-tile feature is invisible: it could not see that the river is severed into two bodies by a single road crossing, which is exactly what the deck is designed to hide.
 - **Best model tried:** `qwen3.5-9b-...-heretic-neo-imatrix-max-mtp` (Q4_K_S, ~5.5 GB) — transcribed a 5×7 bitmap-font caption **exactly** (`WATER SOUTH 210`), spotted the bridge deck and strut on a 3× crop, and correctly answered "no red cars" with grounded evidence. It reasons heavily (300–3,200 tokens), so it is slow but careful.
 
+### Recovering gids from a reference image
+
+Recorded 2026-11-05, from `33zasM.png` (which turned out to be **byte-identical to the pack's own
+`Sample.png`**, so check the pack before analysing a "reference" at all). Two hard-won rules:
+
+- **A resized reference cannot be decomposed exactly.** `Sample.png` is a ~2× interpolated render with the
+  licence text on top: **226 of its 255 colours are absent from the sheet's 35-colour palette**, because
+  every edge is a blend. An exhaustive search over all 198 gids × all positions found exactly one exact
+  match — solid grass — because flat interiors survive interpolation and nothing else does. Estimate the
+  scale from blend-run widths, not from sprite areas: a unit's skin blob reads 4 px in the sheet and 8 px in
+  the render, suggesting 1.41×, but sprite areas inflate under interpolation and the blend width says ~2×.
+- **Composite transparent tiles over a background before matching.** This was the whole bug: comparing raw
+  RGBA rejects every sprite tile, because a composited screenshot shows the ground underneath where the
+  sheet has alpha. Compositing each tile over grass and over water took the match rate from **17.8 % to
+  79.8 %** at pitch 32 / offset (30,25), recovering 62 distinct gids. Anything with transparency in the
+  sheet — units, buildings, roads, coast — was previously unmatchable.
+
+The unresolved remainder is the overlay (licence text, KENNEY logo, arrow, hatched zone), which is not map
+and should not resolve. Tools: `tools/decompose-reference.cjs` (lattice + flip search, exact),
+`tools/decompose-scaled.cjs` (scale estimate, downsample, palette-quantise, then the same search).
+
 ### Feeding images in: `tools/vision_input/`
 
 Images cannot be pasted into chat — the chat model accepts text only — so screenshots are dropped in a folder and referenced by path. Two subfolders, added 2026-11-05:

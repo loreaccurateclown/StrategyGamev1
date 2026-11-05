@@ -168,9 +168,29 @@ thin lake using the coast tiles.
 ## Pending
 - **26** — looks like a signboard but is unconfirmed. **Do not use it anywhere**
   until the user verifies what it is.
-- Whether `55`/`57` differ meaningfully from `22`/`23`.
-- Water variants: only 38 (fill), 58 (flow marker), 94 (fill + land speck) and
-  the coast set are confirmed. `72–76`, `91–93` and `149` still need identification.
+
+## Resolved 2026-11-05 (water/shore block)
+
+Identified by pixel measurement (`tools/tile-shore-scan.cjs` dumps one ASCII grid per tile), not by eye:
+
+| gid | shape | role |
+|---|---|---|
+| 20 | land rows 0–3, **sand 4–6**, water 7–15 | north bank — the only beach-bearing bank |
+| 37 / 39 | land in one column, ~2 beach px | west / east bank |
+| 56 | water 0–11, land 12–15, **no beach** | south-facing bank, but a different art family |
+| 19 / 21 / 22 / 23 | diagonal land wedge | corners; `19 + flips` covers all four |
+| 91 / 92 / 94 / 93 | land in **one corner only** | **inner (concave) corner**, NW / NE / SW / SE |
+| 40 / 73 / 75 / 76 | land in **two corners**, edge middle water | water passing between two land corners |
+| 149 | thin bar across the tile | bridge strut (road, not water) |
+| 58 | banks on **both** W and E | narrow vertical channel |
+
+The south bank is **not** used directly: it has no beach, so the generator declares
+`{ "gid": 20, "flip": "v" }` and mirrors the north bank instead. Flip flags mirror,
+they cannot rotate — which is why there is no N+S channel tile and why the mirrored
+north bank is the correct construction rather than a compromise.
+
+`72–76` are now understood as the paired-corner family; `74` carries a beach and is
+still unused by the generator.
 
 ## Mountain: confirmed, but only one tile
 
