@@ -181,7 +181,7 @@ npm install
 npm run map:generate      # expect: Verified: 64x48 @ 16px, 4 layers | connectivity: 1 component(s)
 node tools/map-stats.cjs  # expect: verdict: OK  (1 orphan city is normal)
 npx tsc --noEmit          # expect exit 0
-node tools/render-map-preview.cjs   # -> tools/previews/map-preview.png
+node tools/render-map-preview.cjs   # -> tools/previews/map-preview_seed<N>.png
 npm run dev               # currently shows board center at old 800x600 zoom - renderer rework pending
 ```
 
@@ -229,7 +229,7 @@ Dev-only, safe to delete, not in any build path (gitignored):
 
 - `tools/palette-inspector.html`, `tools/tile-picker.html` — palette viewers
 - `tools/*.txt` — generated reports
-- `tools/previews/*.png` — every generated render (`map-preview.png` is regenerated each run)
+- `tools/previews/*.png` — every generated render. Named `map-preview_seed<N>.png` from the map's own `seed` property, so renders accumulate per seed instead of overwriting one canonical file (`--out=` still overrides).
 - `tools/vision_input/{unread,read}/` — screenshots handed to the vision model by path, since images cannot be pasted into chat. Drop new captures in `unread/`, they move to `read/` once analysed; the folder accumulates and is gitignored. See `tooling_notes.md` → "Feeding images in".
 - `tools/awmaps/*.png` — AW reference map rips (not our renders)
 - `.playwright-mcp/` — browser tool output

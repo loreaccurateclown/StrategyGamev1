@@ -102,6 +102,9 @@ function buildMap(visual, variations, collisions) {
     infinite: false,
     nextlayerid: 5,
     nextobjectid: 1,
+    // Tiled map properties. `seed` travels with the map so a render can name itself
+    // after the seed that produced it and any artefact stays traceable back to a run.
+    properties: [{ name: "seed", type: "int", value: seed }],
     tilesets: [
       {
         firstgid: 1,

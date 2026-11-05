@@ -4,10 +4,12 @@
  * same way BattleScene does.
  *
  * Usage:
- *   node tools/render-map-preview.cjs [map.json] [--scale N]
+ *   node tools/render-map-preview.cjs [map.json] [--scale N] [--out=name.png]
  *
  * Defaults: public/assets/maps/level_01.json, scale 2 (nearest-neighbour).
- * Output: tools/previews/map-preview.png (gitignored).
+ * Output: tools/previews/map-preview_seed<seed>.png (gitignored), named from the
+ * map's own `seed` property so renders never overwrite each other across seeds.
+ * `--out=` overrides the name.
  */
 const fs = require("node:fs");
 const path = require("node:path");
@@ -252,7 +254,12 @@ if (scale > 1) {
 }
 
 const OUT_DIR = path.join(__dirname, "previews");
-const outPath = outName ? path.join(OUT_DIR, outName) : path.join(OUT_DIR, "map-preview.png");
+// Name the render after the seed it came from, so a folder of previews is self
+// describing and no artefact can be mistaken for a different run. The seed travels
+// in the map JSON as a Tiled map property.
+const seedProperty = (map.properties ?? []).find((p) => p.name === "seed");
+const defaultName = seedProperty ? `map-preview_seed${seedProperty.value}.png` : "map-preview.png";
+const outPath = outName ? path.join(OUT_DIR, outName) : path.join(OUT_DIR, defaultName);
 fs.mkdirSync(OUT_DIR, { recursive: true });
 fs.writeFileSync(outPath, encodePng(finalW, finalH, finalBoard));
 console.log(

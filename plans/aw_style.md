@@ -25,7 +25,7 @@ Observed from the Field Training rips plus the campaign map (which is a world ma
 
 ## How the current generated 64×48 map diverges
 
-Reference render: `tools/previews/map-preview.png`.
+Reference render: `tools/previews/map-preview_seed<N>.png` (self-named from the map's seed property).
 
 | AW1 | Our output |
 |-----|------------|
