@@ -23,6 +23,8 @@ build
 # Agent / browser tooling output (dev-only, never shipped)
 .playwright-mcp/
 .dsh-code-index/
+# Files dropped into the chat UI land here (images etc.) - never commit them.
+.dsh-drop/
 
 # Dev-only generated reports, render screenshots and reference rips under tools/
 # (the .cjs and .html palette tools are kept; tools/awmaps holds copyrighted

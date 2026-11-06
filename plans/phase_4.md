@@ -149,24 +149,138 @@ Layer inventory for a default run:
 
 ---
 
-## 4.2b — `TileMapManager` from the map ⬜
+## 4.2b — `TileMapManager` from the sidecar ⬜ (prepped 2026-11-05)
 
-Not started. Target contract:
+**Decided 2026-11-05: the client reads `level_01.terrain.json`.** The gid reverse-mapping that this
+section used to specify — "start from `ground`, then stamp each `*-visual` layer, map each gid through
+`assets/generator/palette.json`" — is **obsolete. Do not implement it.** It was superseded on
+2026-11-01 (step G3) and confirmed again when the runtime source was chosen: the generator knows every
+gid's terrain at write time, so an unknown gid should be a *generation* error, not a browser error.
+Gids never reach the game logic.
 
 ```ts
-// src/core/TileMapManager.ts
-export function terrainGridFromMap(map: TiledMapLike): TerrainType[][]
+// src/core/TileMapManager.ts — plain TypeScript, NO Phaser import
+export interface TiledMapLike {
+    width: number;
+    height: number;
+    tilewidth: number;
+}
+
+export interface TerrainMap {
+    width: number;
+    height: number;
+    tileSize: number;
+    grid: TerrainType[][]; // grid[y][x] — matches Pathfinding's indexing
+}
+
+export function terrainGridFromSidecar(map: TiledMapLike, sidecar: unknown): TerrainMap
 ```
 
 Rules:
 
-- Start from `ground` (all grass), then stamp each `*-visual` layer on top in layer order.
-- Map each gid → `TerrainType` through `assets/generator/palette.json`. **Do not** assume gid === `TerrainType`.
-- Validate at the import boundary: an unknown gid is a hard error, not a silent skip — after that check, the pathfinder can trust every value it receives. Tracked in `.vscode/todos.json`.
-- Keep the result Phaser-free so `Pathfinding.ts` can consume it under Vitest's Node environment.
-- Collision comes from `*-collisions` + `collisions-map-border`, not from visual layers.
+- **Indexing is `grid[y][x]`**, because `Pathfinding.ts` indexes `grid[next.y][next.x]`. The sidecar
+  stores flat row-major `terrain`, so `grid[y][x]` is `terrain[y * width + x]`. Inverting this is the
+  single most likely bug in the file.
+- **Hard errors, never silent defaults.** Throw on: missing/NaN `width`/`height` in either input,
+  `terrain.length !== width * height`, a value that is not a known `TerrainType`, or a dimension
+  mismatch between map and sidecar. After this check the pathfinder can trust every value it
+  receives, which is what step 1.3b's boundary assumes.
+- **`tileSize` is cross-checked** against the map's `tilewidth`. The sidecar also carries `seed` and
+  `paletteHash`; the hash is the cheap way to prove the pair came from the same generation run.
+- **Collision is out of scope.** The sidecar carries terrain only, so walkability comes from
+  `TERRAIN_DEFS[...].passable` via `enterCost`. Wiring the `collisions` layer is 4.3.
+- **Phaser-free**, so it runs under Vitest's Node environment alongside `Pathfinding.test.ts`.
 
-**Decided 2026-11-01 (was "alternative worth considering"):** the generator will emit a sidecar `level_01.terrain.json` containing the already-resolved `TerrainType[][]`, so the client never reverse-maps gids. Rationale: the generator knows every gid's terrain at write time, so an unknown gid is a *generation* error rather than a browser error, and `TileMapManager` collapses to a fetch + validate with no palette knowledge. See step **G3** in the roadmap below. This makes the whole reverse-mapping approach described above obsolete — do not implement it.
+Tests (`src/core/TileMapManager.test.ts`):
+
+- a small hand-written fixture for the happy path, proving `grid[y][x]` orientation explicitly;
+- one test per hard error: short `terrain` array, unknown value (`99`), dimension mismatch;
+- the **real generated map** — `public/assets/maps/level_01.{json,terrain.json}` loaded with `fs`,
+  asserting 64×48, `terrain.length === 3072`, and every cell in `1..6`.
+
+Non-goals for this step: touching `BattleScene`, the display rework (4.2a), and any gid or layer
+compositing logic.
+
+### Why the file is ~70 lines when the contract above is 16
+
+The block above is only the *shape* — two interfaces and a signature. The file also has to treat the
+sidecar as **untrusted input**, because in the browser it arrives from a `fetch`, not from a typed
+import. That validation is the bulk of it:
+
+| part | ~lines |
+|---|---|
+| interfaces + doc comments | 15 |
+| guards (the checks below) | 25 |
+| building the nested grid | 10 |
+| error message formatting | 10 |
+
+Bare, without comments, it fits in ~40. If it lands at 70 that is mostly documentation, which on a
+boundary module is the point — this is the one place that gets to assume the data is good, so it has
+to explain what "good" means.
+
+### Validation order — cheapest check first
+
+1. `map.width`, `map.height`, `map.tilewidth` are finite positive integers.
+2. `sidecar` is a non-null object.
+3. `sidecar.width` and `sidecar.height` are finite positive integers.
+4. **`sidecar.width === map.width && sidecar.height === map.height`** — otherwise the two files came
+   from different runs and every index would be silently off.
+5. **`sidecar.tileSize === map.tilewidth`** — otherwise the sidecar describes a different tileset.
+6. `Array.isArray(sidecar.terrain)`.
+7. `sidecar.terrain.length === width * height`.
+8. every value has an own property in `TERRAIN_DEFS` — checked during the grid build, so it costs no
+   extra pass.
+
+Steps 4 and 5 are the ones that catch a stale pair. They are the reason the sidecar carries `seed`
+and `paletteHash` too, though dimensions catch the common case on their own.
+
+Note what "known terrain" means here: `Object.prototype.hasOwnProperty.call(TERRAIN_DEFS, value)`,
+**not** `enterCost(value) !== Infinity`. Water is a known terrain that is deliberately impassable, so
+a cost check would reject valid water cells and every lake would fail to load.
+
+### Error messages carry the position
+
+A bare `throw new Error("unknown terrain")` on a 3,072-cell array is useless. Every failure names the
+index, the coordinate, and the offending value:
+
+```
+level_01.terrain.json: terrain[1543] = 99 at (7, 24) is not a TerrainType
+```
+
+### Load path — one function, two callers
+
+The function takes **plain objects**, so nothing about testing differs from production:
+
+```ts
+// browser (BattleScene.preload / create) — Phaser loading stays out of this module
+this.load.json("terrain", "assets/maps/level_01.terrain.json");
+const terrainMap = terrainGridFromSidecar(map, this.cache.json.get("terrain"));
+
+// vitest — plain fs, no Phaser, no DOM
+const terrainMap = terrainGridFromSidecar(
+    JSON.parse(fs.readFileSync("public/assets/maps/level_01.json", "utf8")),
+    JSON.parse(fs.readFileSync("public/assets/maps/level_01.terrain.json", "utf8")),
+);
+```
+
+**Worked example** — a 2×2 sidecar with `terrain: [1, 1, 3, 3]` must produce
+
+```ts
+[[1, 1],    // y=0: indices 0,1  -> grass, grass
+ [3, 3]]    // y=1: indices 2,3  -> water, water
+```
+
+If a test passes with that transposed, the orientation is wrong.
+
+### What step 1.5 consumes
+
+```ts
+const { grid, width, height } = terrainGridFromSidecar(map, sidecar);
+const reachable = getReachableTiles(grid, unitPos, unitMove, enterCost, isOccupied);
+```
+
+`TerrainType[][]` is assignable to the `number[][]` that `getReachableTiles` declares, so no cast is
+needed and no conversion step exists between the two modules.
 
 ---
 
