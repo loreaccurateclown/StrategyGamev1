@@ -2,7 +2,7 @@
 
 **Goal:** A reproducible, scripted pipeline that turns the Kenney tiny-battle tileset into a playable board, plus the code that reads that board into the game's own terrain model. No hand-authoring in the Tiled editor.
 
-**Status:** 4.1, 4.1b (G1–G4) and 4.2a are done. The map contract is **frozen**: 4 layers (`ground`, `ground-variations`, `terrain`, `collisions`) plus `level_01.terrain.json`. 4.2b (`TileMapManager`) is therefore **unblocked**; 4.3 follows it.
+**Status:** 4.1, 4.1b (G1–G4), 4.2a and **4.2b are done**. The map contract is **frozen**: 4 layers (`ground`, `ground-variations`, `terrain`, `collisions`) plus `level_01.terrain.json`. `TileMapManager` reads the sidecar and is covered by 17 tests; **4.3 (wiring) is next**.
 
 ---
 
@@ -149,7 +149,7 @@ Layer inventory for a default run:
 
 ---
 
-## 4.2b — `TileMapManager` from the sidecar ⬜ (prepped 2026-11-05)
+## 4.2b — `TileMapManager` from the sidecar ✅ (prepped 2026-11-05, done 2026-11-06)
 
 **Decided 2026-11-05: the client reads `level_01.terrain.json`.** The gid reverse-mapping that this
 section used to specify — "start from `ground`, then stamp each `*-visual` layer, map each gid through
@@ -191,12 +191,26 @@ Rules:
   `TERRAIN_DEFS[...].passable` via `enterCost`. Wiring the `collisions` layer is 4.3.
 - **Phaser-free**, so it runs under Vitest's Node environment alongside `Pathfinding.test.ts`.
 
-Tests (`src/core/TileMapManager.test.ts`):
+Tests (`src/core/TileMapManager.test.ts`) — **17 tests, all passing**:
 
 - a small hand-written fixture for the happy path, proving `grid[y][x]` orientation explicitly;
-- one test per hard error: short `terrain` array, unknown value (`99`), dimension mismatch;
+- an **asymmetric** 3×2 fixture, because a transposed build passes the symmetric 2×2 one;
+- water accepted as valid terrain — guards against validating with `enterCost(...) !== Infinity`,
+  which would reject every lake;
+- one test per hard error: non-object sidecar, bad map dims (`0`, `NaN`, `1.5`), bad sidecar dims,
+  dimension mismatch, `tileSize` mismatch, non-array `terrain`, short array, long array, unknown
+  value (`99`, asserting the message names index `3` and coordinate `(1, 1)`), non-numeric values;
 - the **real generated map** — `public/assets/maps/level_01.{json,terrain.json}` loaded with `fs`,
-  asserting 64×48, `terrain.length === 3072`, and every cell in `1..6`.
+  asserting 64×48, `terrain.length === 3072`, every cell in `1..6`, and a per-cell row-major
+  regression check.
+
+Two bugs the tests caught during implementation, both worth remembering:
+
+1. **`terrain[i]` instead of `terrain[y * width + x]`** — `i` is the row index, so every cell in a
+   row repeated that row's first value. It corrupted **2596 of 3072** cells while still producing a
+   plausible-looking grid. The 2×2 fixture fails loudly on it.
+2. **`hasOwnProperty` coerces its key to a string**, so `"3"` matched the `3` key and a string
+   terrain value was accepted. The guard needs `typeof coordTerrain !== "number"` first.
 
 Non-goals for this step: touching `BattleScene`, the display rework (4.2a), and any gid or layer
 compositing logic.

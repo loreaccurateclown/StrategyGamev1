@@ -24,25 +24,26 @@ Everything below was re-run at the end of this session, not copied forward.
 | Roads | **322 cells, 1 component**; 3× (2×2 road blocks), 3 four-ways, 40 T-junctions | ✅ |
 | Cities | **89 buildings, 88 with road frontage** (the 1 remainder is 2 tiles from a road) | ✅ |
 | Version control | `origin/main` = local `main`, clean tree | ✅ |
-| `Pathfinding.ts` / `Pathfinding.test.ts` | absent | ⬜ |
-| `TileMapManager.ts` | absent — contract is now frozen, so it is unblocked | ⬜ |
+| `Pathfinding.ts` / `Pathfinding.test.ts` | written; **7 tests pass** under `vitest run` | ✅ |
+| `TileMapManager.ts` / `TileMapManager.test.ts` | written; **17 tests pass** under `vitest run` | ✅ |
 | Units, reachable highlighting, movement, FSM | absent — `BattleScene` only loads and draws | ⬜ |
 | Fog, attack, enemy AI | absent | ⬜ |
-| `npm test` | fails **before running any test** — `spawn EPERM` | ⚠️ environment |
+| `npm test` | **31/31 pass** (3 files) — the old `spawn EPERM` limit no longer applies | ✅ |
 
 The board is **64×48 on disk**. The renderer has **not** been updated: `BattleScene` still fits the old 800×600 canvas at zoom 1, so `npm run dev` shows the center of the new board until the 48 px/tile + panning display work lands.
 
-### `npm test` cannot run in this sandbox
+### `npm test` — resolved 2026-11-06
+
+The old `spawn EPERM` failure (esbuild spawning a child process with piped stdio, blocked by the
+confined sandbox) **no longer reproduces**. `npm test` now runs the full suite:
 
 ```
-failed to load config from vite.config.ts
-Error: spawn EPERM   (esbuild → child_process.spawn, piped stdio)
+Test Files  3 passed (3)
+     Tests  31 passed (31)
 ```
 
-esbuild spawns a child process with piped stdio, which the confined sandbox blocks (named-pipe restriction). It is an environment limit, **not a project defect**: vitest dies while loading `vite.config.ts`, before test discovery. Consequences:
-
-- `phase_1.md`'s DoD line "`npm test` passes all Pathfinding tests" is currently **unverifiable from inside DSH**. It needs `danger-full-access` or a run outside the sandbox.
-- Do not read "npm test failed" as "the tests are broken" — no tests exist yet.
+That clears `phase_1.md`'s DoD line "`npm test` passes all Pathfinding tests", and it means the
+pathfinder is now behaviourally verified rather than only type-clean.
 
 ---
 
@@ -105,8 +106,8 @@ The deck is drawn so the water reads as **flowing freely underneath** — the st
 ## Not done
 
 - **City distribution (G7)** — designed and decided, not implemented. Two goals: stop connecting every building to a road (currently 95 % are road-adjacent, which is why density reads uniform), and thin buildings with a graded curve inside a district so density falls off from the core. **Direction settled 2026-11-05: orphans are pruned hardest, density concentrates toward the road.** Design, measured baseline and the inversion trap are in `phase_4.md` → "G7 — City distribution".
-- `src/core/TileMapManager.ts` — absent (phase 4.2b). **Now unblocked**: the map contract (4 layers + sidecar) is frozen.
-- `src/core/Pathfinding.ts` + `Pathfinding.test.ts` — **written** (`getReachableTiles` with a `TerrainCostFn`/`IsOccupiedFn` injection, MinHeap, `reconstructPath`). The test has **never been executed in this sandbox** (`npm test` dies with `spawn EPERM`), so the pathfinder is type-clean but behaviourally unverified — see tooling_notes.md. Everything built on it inherits that risk until the suite runs once outside the sandbox.
+- `src/core/TileMapManager.ts` + `TileMapManager.test.ts` — **done (4.2b)**. Reads `level_01.terrain.json` into `grid[y][x]`, no gid reverse-mapping, 17 tests. Two bugs were caught by the tests: `terrain[i]` instead of `terrain[y * width + x]` (corrupted 2596/3072 cells), and `hasOwnProperty` coercing `"3"` to the `3` key.
+- `src/core/Pathfinding.ts` + `Pathfinding.test.ts` — **written and now executed**: 7 tests pass under `vitest run`. The old `spawn EPERM` sandbox limit no longer reproduces, so the pathfinder is behaviourally verified, not just type-clean.
 - Units, reachable-tile highlighting, movement, FSM. `BattleScene` still only loads and draws.
 - Renderer display rework — fixed 48 px/tile + panning + `Phaser.Scale.RESIZE`.
 - Fog, attack, enemy AI.
@@ -171,7 +172,7 @@ Recorded in [`tooling_notes.md`](./tooling_notes.md); repeated here because ever
 2. **schannel TLS fails** (`SEC_E_NO_CREDENTIALS`). `http.sslBackend=openssl` is stored in the repo config.
 3. **`git push` needs `danger-full-access`** — the credential helper cannot spawn its shell wrapper under confinement.
 4. **Headless Chrome needs `danger-full-access`** — crashpad `OpenProcess: Access is denied`.
-5. **`npm test` cannot run** (`spawn EPERM`, esbuild piped stdio). See above.
+5. **`npm test` now runs** — the old `spawn EPERM` (esbuild piped stdio) no longer reproduces; 31/31 pass. See above.
 6. **Model capability matters:** Flash can read images (`read_image`), Pro cannot. Render-judging must happen on Flash.
 
 ---
@@ -184,6 +185,7 @@ npm install
 npm run map:generate      # expect: Verified: 64x48 @ 16px, 4 layers | connectivity: 1 component(s)
 node tools/map-stats.cjs  # expect: verdict: OK  (1 orphan city is normal)
 npx tsc --noEmit          # expect exit 0
+npm test                  # expect 31 passed (3 files)
 node tools/render-map-preview.cjs   # -> tools/previews/map-preview_seed<N>.png
 npm run dev               # currently shows board center at old 800x600 zoom - renderer rework pending
 ```
@@ -203,10 +205,9 @@ npm run map:generate -- --seed 1234
 
 The generator is in good shape and the map contract is **frozen** (4 layers + terrain sidecar). The critical path is now the game engine:
 
-1. **`TileMapManager` (4.2b)** — read the 4 layers + sidecar, no gid reverse-mapping. Unblocked now, and it is the last thing standing between us and the core loop.
-2. **Core loop (1.5)** — pointer → tile → `getReachableTiles` → tint → click to move. Pathfinding and the terrain boundary are both done, so this is wiring.
-3. **Renderer display rework (4.2a)** — 48 px/tile, panning, `Phaser.Scale.RESIZE`.
-4. **Units + highlighting + movement polish** — real unit sprites, and the reachable overlay as a proper layer.
+1. **Core loop (1.5)** — pointer → tile → `getReachableTiles` → tint → click to move. `TileMapManager` (4.2b) is done, so this is now pure wiring.
+2. **Renderer display rework (4.2a)** — 48 px/tile, panning, `Phaser.Scale.RESIZE`.
+3. **Units + highlighting + movement polish** — real unit sprites, and the reachable overlay as a proper layer.
 
 Generator work that can wait but is known: dockyard-on-shore, factory placement decision, generating non-neutral buildings (airport/dockyard/factory) once spawn logic exists, and G7 city distribution.
 
@@ -216,7 +217,7 @@ Generator work that can wait but is known: dockyard-on-shore, factory placement 
 
 - **`todo.md` retired.** The actionable list is `.vscode/todos.json` (Todo It). Do not recreate it.
 - **`getTerrainCost` stays.** `getReachableTiles` keeps its cost-function parameter and a `number[][]` grid, per `phase_1.md`.
-- **The map contract is frozen** at 4 layers + terrain sidecar. `TileMapManager` can be written against it.
+- **The map contract is frozen** at 4 layers + terrain sidecar. `TileMapManager` reads it (4.2b done).
 - **Display strategy settled — fixed 48 px/tile + panning, board 64×48.** Source art stays 16 px; the 3× is integer camera zoom. Canvas fills the window (`Phaser.Scale.RESIZE`).
 - **`@reldens/tile-map-generator` is dropped** in favour of the purpose-built composer. Do not reintroduce it.
 - **Roads connect to the nearest road (network), not to the map edge.** Roads form one connected lattice; edge-running is limited to the main skeleton.
